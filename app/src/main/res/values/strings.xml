@@ -2,4 +2,5 @@
     <string name="app_name">My Application</string>
     <string name="welcome_message">Hello, Android!</string>
     <string name="app_description">This is my first Android app.</string>
+    <string name="open_camera">Open Camera</string>
 </resources>
