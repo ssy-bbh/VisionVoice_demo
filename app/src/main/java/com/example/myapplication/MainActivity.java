@@ -135,11 +135,21 @@ public class MainActivity extends AppCompatActivity {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode == CAMERA_REQUEST_CODE && resultCode == RESULT_OK) {
             if (data != null && data.getExtras() != null) {
-                Bitmap photo = (Bitmap) data.getExtras().get("data");
+                Bitmap originalPhoto = (Bitmap) data.getExtras().get("data");
 
-                if (photo != null) {
-                    imageView.setImageBitmap(photo);
-                    classifyImage(photo);
+                if (originalPhoto != null) {
+                    // Crop the image to the center square to improve accuracy
+                    int width = originalPhoto.getWidth();
+                    int height = originalPhoto.getHeight();
+                    int size = Math.min(width, height); // Get the smaller dimension for a square crop
+                    int x = (width - size) / 2;
+                    int y = (height - size) / 2;
+
+                    Bitmap croppedPhoto = Bitmap.createBitmap(originalPhoto, x, y, size, size);
+
+                    // Display the cropped photo and classify it
+                    imageView.setImageBitmap(croppedPhoto);
+                    classifyImage(croppedPhoto);
                 }
             }
         }
