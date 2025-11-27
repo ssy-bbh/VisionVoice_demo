@@ -48,19 +48,27 @@ public class MainActivity extends AppCompatActivity {
 
         imageView = findViewById(R.id.imageView);
         resultTextView = findViewById(R.id.result_text);
-        Button cameraButton = findViewById(R.id.camera_button);
+        Button staticRecognitionButton = findViewById(R.id.static_recognition_button);
+        Button realtimeRecognitionButton = findViewById(R.id.realtime_recognition_button);
 
         loadLabels();
         initImageClassifier();
 
-        cameraButton.setOnClickListener(v -> {
+        // Setup for the static (photo) recognition button
+        staticRecognitionButton.setOnClickListener(v -> {
             if (ContextCompat.checkSelfPermission(MainActivity.this, Manifest.permission.CAMERA)
                     == PackageManager.PERMISSION_GRANTED) {
-                openCamera();
+                openCameraForStaticCapture();
             } else {
                 ActivityCompat.requestPermissions(MainActivity.this,
                         new String[]{Manifest.permission.CAMERA}, CAMERA_PERMISSION_REQUEST_CODE);
             }
+        });
+
+        // FINAL STEP: Setup for the real-time recognition button to launch the new activity
+        realtimeRecognitionButton.setOnClickListener(v -> {
+            Intent intent = new Intent(MainActivity.this, RealtimeActivity.class);
+            startActivity(intent);
         });
     }
 
@@ -83,11 +91,9 @@ public class MainActivity extends AppCompatActivity {
             BaseOptions baseOptions = BaseOptions.builder().setNumThreads(4).build();
             ImageClassifier.ImageClassifierOptions options = ImageClassifier.ImageClassifierOptions.builder()
                     .setBaseOptions(baseOptions)
-                    .setMaxResults(1) // We only want the top 1 result
+                    .setMaxResults(1)
                     .build();
-
             imageClassifier = ImageClassifier.createFromFileAndOptions(this, "efficientnet-lite2-int8.tflite", options);
-
         } catch (IOException e) {
             Log.e(TAG, "TFLite failed to load", e);
             Toast.makeText(this, "Image classifier failed to load.", Toast.LENGTH_SHORT).show();
@@ -99,25 +105,21 @@ public class MainActivity extends AppCompatActivity {
             Toast.makeText(this, "Uninitialized image classifier or invalid bitmap.", Toast.LENGTH_SHORT).show();
             return;
         }
-
         TensorImage tensorImage = TensorImage.fromBitmap(bitmap);
         List<Classifications> results = imageClassifier.classify(tensorImage);
-
         if (results != null && !results.isEmpty() && results.get(0).getCategories() != null && !results.get(0).getCategories().isEmpty()) {
             Category topCategory = results.get(0).getCategories().get(0);
-            String numericLabel = topCategory.getLabel(); // This is the number, e.g., "598"
+            String numericLabel = topCategory.getLabel();
             float score = topCategory.getScore();
-            String finalLabel = numericLabel; // Default to the number
-
+            String finalLabel = numericLabel;
             try {
                 int index = Integer.parseInt(numericLabel);
                 if (labels != null && index >= 0 && index < labels.size()) {
-                    finalLabel = labels.get(index); // Translate index to text label
+                    finalLabel = labels.get(index);
                 }
             } catch (NumberFormatException e) {
                 Log.e(TAG, "Could not parse label to an integer: " + numericLabel, e);
             }
-
             String resultStr = String.format("Object: %s\nConfidence: %.2f%%", finalLabel, score * 100);
             resultTextView.setText(resultStr);
         } else {
@@ -125,7 +127,7 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    private void openCamera() {
+    private void openCameraForStaticCapture() {
         Intent cameraIntent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
         startActivityForResult(cameraIntent, CAMERA_REQUEST_CODE);
     }
@@ -136,18 +138,13 @@ public class MainActivity extends AppCompatActivity {
         if (requestCode == CAMERA_REQUEST_CODE && resultCode == RESULT_OK) {
             if (data != null && data.getExtras() != null) {
                 Bitmap originalPhoto = (Bitmap) data.getExtras().get("data");
-
                 if (originalPhoto != null) {
-                    // Crop the image to the center square to improve accuracy
                     int width = originalPhoto.getWidth();
                     int height = originalPhoto.getHeight();
-                    int size = Math.min(width, height); // Get the smaller dimension for a square crop
+                    int size = Math.min(width, height);
                     int x = (width - size) / 2;
                     int y = (height - size) / 2;
-
                     Bitmap croppedPhoto = Bitmap.createBitmap(originalPhoto, x, y, size, size);
-
-                    // Display the cropped photo and classify it
                     imageView.setImageBitmap(croppedPhoto);
                     classifyImage(croppedPhoto);
                 }
@@ -160,7 +157,7 @@ public class MainActivity extends AppCompatActivity {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode == CAMERA_PERMISSION_REQUEST_CODE) {
             if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                openCamera();
+                openCameraForStaticCapture();
             } else {
                 Toast.makeText(this, "Camera permission denied.", Toast.LENGTH_SHORT).show();
             }
