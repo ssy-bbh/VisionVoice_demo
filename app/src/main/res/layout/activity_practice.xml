@@ -1,0 +1,211 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.coordinatorlayout.widget.CoordinatorLayout 
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/white">
+
+    <!-- 主内容区 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:padding="24dp">
+        
+        <!-- 顶部导航 -->
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp">
+            <ImageView
+                android:id="@+id/btnClosePractice"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:src="@android:drawable/ic_menu_close_clear_cancel"
+                app:tint="@color/text_secondary"/>
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:text="Practice"
+                android:textSize="18sp"
+                android:textStyle="bold"
+                android:textColor="@color/text_primary"/>
+        </FrameLayout>
+
+        <!-- 图片卡片 -->
+        <androidx.cardview.widget.CardView
+            android:layout_width="match_parent"
+            android:layout_height="220dp"
+            app:cardCornerRadius="24dp"
+            app:cardElevation="0dp"
+            app:cardBackgroundColor="@color/surface_gray"
+            android:layout_marginTop="24dp">
+            <!-- 实际开发中用 ImageView src 替换 -->
+            <ImageView
+                android:id="@+id/ivTargetImage"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:scaleType="centerInside"
+                android:src="@android:drawable/ic_menu_gallery"
+                app:tint="@color/text_secondary"/> 
+        </androidx.cardview.widget.CardView>
+
+        <!-- 单词与音标 -->
+        <TextView
+            android:id="@+id/tvTargetWord"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="32dp"
+            android:text="Apple"
+            android:gravity="center"
+            android:textSize="42sp"
+            android:textStyle="bold"
+            android:textColor="@color/text_primary"/>
+        <TextView
+            android:id="@+id/tvPhonetic"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="/ˈæp.l/"
+            android:gravity="center"
+            android:textSize="20sp"
+            android:textColor="@color/text_secondary"/>
+
+        <Space android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1"/>
+
+        <!-- 底部控制栏 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:layout_marginBottom="48dp">
+
+            <ImageButton
+                android:id="@+id/btnTTS"
+                android:layout_width="56dp"
+                android:layout_height="56dp"
+                android:background="@drawable/bg_circle_gray"
+                android:src="@android:drawable/ic_lock_silent_mode_off"
+                app:tint="@color/brand_blue"/>
+
+            <FrameLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginHorizontal="32dp">
+                <View
+                    android:id="@+id/viewRipple"
+                    android:layout_width="88dp"
+                    android:layout_height="88dp"
+                    android:background="@drawable/bg_circle_orange"
+                    android:alpha="0.3"
+                    android:visibility="invisible"/>
+                <ImageButton
+                    android:id="@+id/btnRecord"
+                    android:layout_width="88dp"
+                    android:layout_height="88dp"
+                    android:background="@drawable/bg_circle_orange"
+                    android:src="@android:drawable/ic_btn_speak_now"
+                    app:tint="@color/white"
+                    android:elevation="6dp"/>
+            </FrameLayout>
+
+            <View android:layout_width="56dp" android:layout_height="56dp"/> <!-- 占位平衡 -->
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- Bottom Sheet Feedback -->
+    <LinearLayout
+        android:id="@+id/bottomSheetFeedback"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:background="@color/white"
+        android:padding="24dp"
+        app:behavior_hideable="true"
+        app:behavior_peekHeight="0dp"
+        app:layout_behavior="com.google.android.material.bottomsheet.BottomSheetBehavior">
+
+        <View
+            android:layout_width="40dp"
+            android:layout_height="4dp"
+            android:background="#E0E0E0"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginBottom="24dp"/>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+            <!-- 简单的圆形分数示意 -->
+            <TextView
+                android:layout_width="80dp"
+                android:layout_height="80dp"
+                android:background="@drawable/bg_circle_gray"
+                android:gravity="center"
+                android:text="85%"
+                android:textColor="@color/success_green"
+                android:textStyle="bold"
+                android:textSize="20sp"/>
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="24dp"
+                android:orientation="vertical">
+                <TextView
+                    android:text="Good Job!"
+                    android:textSize="20sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/text_primary"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"/>
+            </LinearLayout>
+        </LinearLayout>
+
+        <TextView
+            android:text="Phoneme Analysis"
+            android:layout_marginTop="24dp"
+            android:layout_marginBottom="12dp"
+            android:textStyle="bold"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"/>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+            <TextView
+                android:text="Ap"
+                android:background="@drawable/bg_phoneme_correct"
+                android:textColor="@color/success_green"
+                android:paddingHorizontal="16dp"
+                android:paddingVertical="8dp"
+                android:textStyle="bold"
+                android:layout_marginEnd="8dp"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"/>
+            <TextView
+                android:text="ple"
+                android:background="@drawable/bg_phoneme_error"
+                android:textColor="@color/error_red"
+                android:paddingHorizontal="16dp"
+                android:paddingVertical="8dp"
+                android:textStyle="bold"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"/>
+        </LinearLayout>
+
+        <Button
+            android:id="@+id/btnNextObject"
+            android:layout_width="match_parent"
+            android:layout_height="60dp"
+            android:text="Next Object"
+            android:backgroundTint="@color/brand_blue"
+            android:layout_marginTop="32dp"/>
+    </LinearLayout>
+
+</androidx.coordinatorlayout.widget.CoordinatorLayout>

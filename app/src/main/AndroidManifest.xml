@@ -13,7 +13,9 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.MyApplication">
+        android:theme="@style/Theme.VisionVoice">
+
+        <!-- MainActivity is now the launcher -->
         <activity
             android:name=".MainActivity"
             android:exported="true">
@@ -25,6 +27,12 @@
 
         <activity
             android:name=".RealtimeActivity"
+            android:exported="false"
+            android:theme="@style/Theme.Material3.DayNight.NoActionBar" />
+
+        <!-- Registering the new PracticeActivity -->
+        <activity
+            android:name=".PracticeActivity"
             android:exported="false" />
 
     </application>

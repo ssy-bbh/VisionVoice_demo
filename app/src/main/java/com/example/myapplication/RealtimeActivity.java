@@ -2,10 +2,13 @@ package com.example.myapplication;
 
 import android.Manifest;
 import android.annotation.SuppressLint;
+import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.os.Bundle;
 import android.util.Log;
+import android.view.View;
+import android.widget.ImageButton;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -13,20 +16,20 @@ import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.camera.core.CameraSelector;
 import androidx.camera.core.ImageAnalysis;
-import androidx.camera.core.ImageProxy;
 import androidx.camera.core.Preview;
 import androidx.camera.lifecycle.ProcessCameraProvider;
 import androidx.camera.view.PreviewView;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
+import com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton;
 import com.google.common.util.concurrent.ListenableFuture;
 
 import org.tensorflow.lite.support.image.TensorImage;
 import org.tensorflow.lite.support.label.Category;
 import org.tensorflow.lite.task.core.BaseOptions;
-import org.tensorflow.lite.task.vision.classifier.ImageClassifier;
 import org.tensorflow.lite.task.vision.classifier.Classifications;
+import org.tensorflow.lite.task.vision.classifier.ImageClassifier;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -43,17 +46,26 @@ public class RealtimeActivity extends AppCompatActivity {
 
     private PreviewView previewView;
     private TextView resultTextView;
+    private ExtendedFloatingActionButton confirmButton;
+    private FocusBoxView focusBoxView;
     private ImageClassifier imageClassifier;
     private List<String> labels;
     private ExecutorService cameraExecutor;
+
+    private String currentDetectionResult = null;
+    private String currentRawLabel = null;
+    private boolean isResultLocked = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_realtime);
 
-        previewView = findViewById(R.id.preview_view);
-        resultTextView = findViewById(R.id.realtime_result_text);
+        previewView = findViewById(R.id.viewFinder);
+        resultTextView = findViewById(R.id.result_text_view);
+        confirmButton = findViewById(R.id.btn_confirm);
+        focusBoxView = findViewById(R.id.focusBox);
+        ImageButton btnClose = findViewById(R.id.btnClose);
 
         cameraExecutor = Executors.newSingleThreadExecutor();
 
@@ -66,6 +78,33 @@ public class RealtimeActivity extends AppCompatActivity {
             ActivityCompat.requestPermissions(
                     this, new String[]{Manifest.permission.CAMERA}, CAMERA_PERMISSION_REQUEST_CODE);
         }
+
+        previewView.setOnClickListener(v -> {
+            if (currentDetectionResult == null) return; // Don't lock if nothing is detected
+
+            isResultLocked = !isResultLocked;
+            if (isResultLocked) {
+                runOnUiThread(() -> {
+                    confirmButton.setVisibility(View.VISIBLE);
+                    focusBoxView.setVisibility(View.VISIBLE); // Show focus box
+                });
+            } else {
+                runOnUiThread(() -> {
+                    confirmButton.setVisibility(View.GONE);
+                    focusBoxView.setVisibility(View.GONE); // Hide focus box
+                });
+            }
+        });
+
+        confirmButton.setOnClickListener(v -> {
+            if (isResultLocked && currentRawLabel != null) {
+                Intent intent = new Intent(RealtimeActivity.this, PracticeActivity.class);
+                intent.putExtra("extra_word", currentRawLabel);
+                startActivity(intent);
+            }
+        });
+
+        btnClose.setOnClickListener(v -> finish());
     }
 
     private void startCamera() {
@@ -85,25 +124,20 @@ public class RealtimeActivity extends AppCompatActivity {
                 imageAnalysis.setAnalyzer(cameraExecutor, imageProxy -> {
                     try {
                         if (imageClassifier == null) {
+                            imageProxy.close();
                             return;
                         }
 
-                        // *** THE CORRECT AND FINAL FIX IS HERE ***
-                        // 1. Convert the ImageProxy to a Bitmap using the official method.
                         @SuppressLint("UnsafeOptInUsageError")
                         Bitmap bitmap = imageProxy.toBitmap();
-
-                        // 2. Convert the bitmap to a TensorImage.
                         TensorImage tensorImage = TensorImage.fromBitmap(bitmap);
-
-                        // 3. Classify the TensorImage - this method is guaranteed to exist.
                         List<Classifications> results = imageClassifier.classify(tensorImage);
 
                         if (results != null && !results.isEmpty() && !results.get(0).getCategories().isEmpty()) {
                             Category topCategory = results.get(0).getCategories().get(0);
                             String numericLabel = topCategory.getLabel();
                             float score = topCategory.getScore();
-                            String finalLabel = numericLabel;
+                            String finalLabel = "Unknown";
 
                             try {
                                 int index = Integer.parseInt(numericLabel);
@@ -111,16 +145,19 @@ public class RealtimeActivity extends AppCompatActivity {
                                     finalLabel = labels.get(index);
                                 }
                             } catch (NumberFormatException e) {
-                               // Continue with the numeric label if parsing fails
+                                // Keep "Unknown"
                             }
+                            
+                            currentRawLabel = finalLabel;
+                            currentDetectionResult = String.format("%s (%.0f%%)", finalLabel, score * 100);
 
-                            String resultStr = String.format("Object: %s\nConfidence: %.2f%%", finalLabel, score * 100);
-                            runOnUiThread(() -> resultTextView.setText(resultStr));
+                            if (!isResultLocked) {
+                                runOnUiThread(() -> resultTextView.setText(currentDetectionResult));
+                            }
                         }
                     } catch (Exception e) {
                         Log.e(TAG, "Error during real-time classification", e);
                     } finally {
-                        // IMPORTANT: Always close the ImageProxy to allow the next frame to be processed.
                         imageProxy.close();
                     }
                 });

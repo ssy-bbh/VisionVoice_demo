@@ -1,166 +1,44 @@
 package com.example.myapplication;
 
-import android.Manifest;
-import android.content.Intent;
-import android.content.pm.PackageManager;
-import android.graphics.Bitmap;
 import android.os.Bundle;
-import android.provider.MediaStore;
-import android.util.Log;
-import android.widget.Button;
-import android.widget.ImageView;
-import android.widget.TextView;
-import android.widget.Toast;
 
-import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.core.app.ActivityCompat;
-import androidx.core.content.ContextCompat;
+import androidx.fragment.app.Fragment;
 
-import org.tensorflow.lite.support.image.TensorImage;
-import org.tensorflow.lite.support.label.Category;
-import org.tensorflow.lite.task.core.BaseOptions;
-import org.tensorflow.lite.task.vision.classifier.ImageClassifier;
-import org.tensorflow.lite.task.vision.classifier.Classifications;
-
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.util.ArrayList;
-import java.util.List;
+import com.google.android.material.bottomnavigation.BottomNavigationView;
 
 public class MainActivity extends AppCompatActivity {
-
-    private static final int CAMERA_PERMISSION_REQUEST_CODE = 100;
-    private static final int CAMERA_REQUEST_CODE = 101;
-    private static final String TAG = "MainActivity";
-
-    private ImageView imageView;
-    private TextView resultTextView;
-    private ImageClassifier imageClassifier;
-    private List<String> labels;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        imageView = findViewById(R.id.imageView);
-        resultTextView = findViewById(R.id.result_text);
-        Button staticRecognitionButton = findViewById(R.id.static_recognition_button);
-        Button realtimeRecognitionButton = findViewById(R.id.realtime_recognition_button);
+        BottomNavigationView bottomNav = findViewById(R.id.bottom_navigation);
+        
+        // 默认加载 HomeFragment
+        getSupportFragmentManager().beginTransaction()
+                .replace(R.id.fragment_container, new HomeFragment())
+                .commit();
 
-        loadLabels();
-        initImageClassifier();
-
-        // Setup for the static (photo) recognition button
-        staticRecognitionButton.setOnClickListener(v -> {
-            if (ContextCompat.checkSelfPermission(MainActivity.this, Manifest.permission.CAMERA)
-                    == PackageManager.PERMISSION_GRANTED) {
-                openCameraForStaticCapture();
-            } else {
-                ActivityCompat.requestPermissions(MainActivity.this,
-                        new String[]{Manifest.permission.CAMERA}, CAMERA_PERMISSION_REQUEST_CODE);
+        bottomNav.setOnItemSelectedListener(item -> {
+            Fragment selectedFragment = null;
+            int itemId = item.getItemId();
+            
+            if (itemId == R.id.nav_home) {
+                selectedFragment = new HomeFragment();
+            } else if (itemId == R.id.nav_dex) {
+                selectedFragment = new CollectionFragment(); // 需自行创建
+            } else if (itemId == R.id.nav_profile) {
+                selectedFragment = new ProfileFragment(); // 需自行创建
             }
+
+            if (selectedFragment != null) {
+                getSupportFragmentManager().beginTransaction()
+                        .replace(R.id.fragment_container, selectedFragment)
+                        .commit();
+            }
+            return true;
         });
-
-        // FINAL STEP: Setup for the real-time recognition button to launch the new activity
-        realtimeRecognitionButton.setOnClickListener(v -> {
-            Intent intent = new Intent(MainActivity.this, RealtimeActivity.class);
-            startActivity(intent);
-        });
-    }
-
-    private void loadLabels() {
-        try (BufferedReader reader = new BufferedReader(
-                new InputStreamReader(getAssets().open("labels.txt")))) {
-            labels = new ArrayList<>();
-            String line;
-            while ((line = reader.readLine()) != null) {
-                labels.add(line);
-            }
-        } catch (IOException e) {
-            Log.e(TAG, "Failed to load labels.", e);
-            Toast.makeText(this, "Labels file failed to load.", Toast.LENGTH_SHORT).show();
-        }
-    }
-
-    private void initImageClassifier() {
-        try {
-            BaseOptions baseOptions = BaseOptions.builder().setNumThreads(4).build();
-            ImageClassifier.ImageClassifierOptions options = ImageClassifier.ImageClassifierOptions.builder()
-                    .setBaseOptions(baseOptions)
-                    .setMaxResults(1)
-                    .build();
-            imageClassifier = ImageClassifier.createFromFileAndOptions(this, "efficientnet-lite2-int8.tflite", options);
-        } catch (IOException e) {
-            Log.e(TAG, "TFLite failed to load", e);
-            Toast.makeText(this, "Image classifier failed to load.", Toast.LENGTH_SHORT).show();
-        }
-    }
-
-    private void classifyImage(Bitmap bitmap) {
-        if (imageClassifier == null || bitmap == null) {
-            Toast.makeText(this, "Uninitialized image classifier or invalid bitmap.", Toast.LENGTH_SHORT).show();
-            return;
-        }
-        TensorImage tensorImage = TensorImage.fromBitmap(bitmap);
-        List<Classifications> results = imageClassifier.classify(tensorImage);
-        if (results != null && !results.isEmpty() && results.get(0).getCategories() != null && !results.get(0).getCategories().isEmpty()) {
-            Category topCategory = results.get(0).getCategories().get(0);
-            String numericLabel = topCategory.getLabel();
-            float score = topCategory.getScore();
-            String finalLabel = numericLabel;
-            try {
-                int index = Integer.parseInt(numericLabel);
-                if (labels != null && index >= 0 && index < labels.size()) {
-                    finalLabel = labels.get(index);
-                }
-            } catch (NumberFormatException e) {
-                Log.e(TAG, "Could not parse label to an integer: " + numericLabel, e);
-            }
-            String resultStr = String.format("Object: %s\nConfidence: %.2f%%", finalLabel, score * 100);
-            resultTextView.setText(resultStr);
-        } else {
-            resultTextView.setText("Could not classify image.");
-        }
-    }
-
-    private void openCameraForStaticCapture() {
-        Intent cameraIntent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
-        startActivityForResult(cameraIntent, CAMERA_REQUEST_CODE);
-    }
-
-    @Override
-    protected void onActivityResult(int requestCode, int resultCode, @Nullable Intent data) {
-        super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode == CAMERA_REQUEST_CODE && resultCode == RESULT_OK) {
-            if (data != null && data.getExtras() != null) {
-                Bitmap originalPhoto = (Bitmap) data.getExtras().get("data");
-                if (originalPhoto != null) {
-                    int width = originalPhoto.getWidth();
-                    int height = originalPhoto.getHeight();
-                    int size = Math.min(width, height);
-                    int x = (width - size) / 2;
-                    int y = (height - size) / 2;
-                    Bitmap croppedPhoto = Bitmap.createBitmap(originalPhoto, x, y, size, size);
-                    imageView.setImageBitmap(croppedPhoto);
-                    classifyImage(croppedPhoto);
-                }
-            }
-        }
-    }
-
-    @Override
-    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        if (requestCode == CAMERA_PERMISSION_REQUEST_CODE) {
-            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                openCameraForStaticCapture();
-            } else {
-                Toast.makeText(this, "Camera permission denied.", Toast.LENGTH_SHORT).show();
-            }
-        }
     }
 }
