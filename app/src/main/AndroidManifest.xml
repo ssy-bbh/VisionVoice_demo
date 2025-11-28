@@ -35,6 +35,12 @@
             android:name=".PracticeActivity"
             android:exported="false" />
 
+        <!-- Registering the new PhotoRecognitionActivity -->
+        <activity
+            android:name=".PhotoRecognitionActivity"
+            android:exported="false"
+            android:theme="@style/Theme.Material3.DayNight.NoActionBar" />
+
     </application>
 
 </manifest>

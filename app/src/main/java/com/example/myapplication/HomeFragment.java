@@ -27,8 +27,10 @@ public class HomeFragment extends Fragment {
             startActivity(intent);
         });
 
+        // Updated: Start PhotoRecognitionActivity
         cardPhoto.setOnClickListener(v -> {
-            Toast.makeText(getContext(), "Photo Gallery coming soon!", Toast.LENGTH_SHORT).show();
+            Intent intent = new Intent(getActivity(), PhotoRecognitionActivity.class);
+            startActivity(intent);
         });
 
         return view;
