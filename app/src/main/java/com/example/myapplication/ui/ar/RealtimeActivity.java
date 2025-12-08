@@ -1,4 +1,4 @@
-package com.example.myapplication;
+package com.example.myapplication.ui.ar;
 
 import android.Manifest;
 import android.annotation.SuppressLint;
@@ -22,20 +22,13 @@ import androidx.camera.view.PreviewView;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
+import com.example.myapplication.R;
+import com.example.myapplication.ml.ObjectRecognitionHelper;
+import com.example.myapplication.ui.practice.PracticeActivity;
+import com.example.myapplication.view.FocusBoxView;
 import com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton;
 import com.google.common.util.concurrent.ListenableFuture;
 
-import org.tensorflow.lite.support.image.TensorImage;
-import org.tensorflow.lite.support.label.Category;
-import org.tensorflow.lite.task.core.BaseOptions;
-import org.tensorflow.lite.task.vision.classifier.Classifications;
-import org.tensorflow.lite.task.vision.classifier.ImageClassifier;
-
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -48,9 +41,9 @@ public class RealtimeActivity extends AppCompatActivity {
     private TextView resultTextView;
     private ExtendedFloatingActionButton confirmButton;
     private FocusBoxView focusBoxView;
-    private ImageClassifier imageClassifier;
-    private List<String> labels;
-    private ExecutorService cameraExecutor;
+    private ExecutorService cameraExecutor; // 用于CameraX的图像分析
+
+    private ObjectRecognitionHelper objectRecognitionHelper; // 新增：识别助手类
 
     private String currentDetectionResult = null;
     private String currentRawLabel = null;
@@ -69,8 +62,8 @@ public class RealtimeActivity extends AppCompatActivity {
 
         cameraExecutor = Executors.newSingleThreadExecutor();
 
-        loadLabels();
-        initImageClassifier();
+        // 初始化识别助手类
+        objectRecognitionHelper = new ObjectRecognitionHelper(this);
 
         if (allPermissionsGranted()) {
             startCamera();
@@ -80,7 +73,7 @@ public class RealtimeActivity extends AppCompatActivity {
         }
 
         previewView.setOnClickListener(v -> {
-            if (currentDetectionResult == null) return; // Don't lock if nothing is detected
+            if (currentDetectionResult == null) return; // 没有结果时不允许锁定
 
             isResultLocked = !isResultLocked;
             if (isResultLocked) {
@@ -122,44 +115,30 @@ public class RealtimeActivity extends AppCompatActivity {
                         .build();
 
                 imageAnalysis.setAnalyzer(cameraExecutor, imageProxy -> {
-                    try {
-                        if (imageClassifier == null) {
-                            imageProxy.close();
-                            return;
-                        }
+                    @SuppressLint("UnsafeOptInUsageError")
+                    Bitmap bitmap = imageProxy.toBitmap();
 
-                        @SuppressLint("UnsafeOptInUsageError")
-                        Bitmap bitmap = imageProxy.toBitmap();
-                        TensorImage tensorImage = TensorImage.fromBitmap(bitmap);
-                        List<Classifications> results = imageClassifier.classify(tensorImage);
-
-                        if (results != null && !results.isEmpty() && !results.get(0).getCategories().isEmpty()) {
-                            Category topCategory = results.get(0).getCategories().get(0);
-                            String numericLabel = topCategory.getLabel();
-                            float score = topCategory.getScore();
-                            String finalLabel = "Unknown";
-
-                            try {
-                                int index = Integer.parseInt(numericLabel);
-                                if (labels != null && index >= 0 && index < labels.size()) {
-                                    finalLabel = labels.get(index);
-                                }
-                            } catch (NumberFormatException e) {
-                                // Keep "Unknown"
-                            }
-                            
-                            currentRawLabel = finalLabel;
-                            currentDetectionResult = String.format("%s (%.0f%%)", finalLabel, score * 100);
+                    // 使用 ObjectRecognitionHelper 进行图像分类
+                    objectRecognitionHelper.classifyImage(bitmap, new ObjectRecognitionHelper.RecognitionCallback() {
+                        @Override
+                        public void onResult(String recognizedWord, float confidence) {
+                            currentRawLabel = recognizedWord;
+                            currentDetectionResult = String.format("%s (%.0f%%)", recognizedWord, confidence * 100);
 
                             if (!isResultLocked) {
                                 runOnUiThread(() -> resultTextView.setText(currentDetectionResult));
                             }
                         }
-                    } catch (Exception e) {
-                        Log.e(TAG, "Error during real-time classification", e);
-                    } finally {
-                        imageProxy.close();
-                    }
+
+                        @Override
+                        public void onError(String errorMessage) {
+                            Log.e(TAG, "Recognition error: " + errorMessage);
+                            if (!isResultLocked) {
+                                runOnUiThread(() -> resultTextView.setText("Error: " + errorMessage));
+                            }
+                        }
+                    });
+                    imageProxy.close(); // 确保图像帧被关闭
                 });
 
                 CameraSelector cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA;
@@ -190,35 +169,12 @@ public class RealtimeActivity extends AppCompatActivity {
         }
     }
 
-    private void loadLabels() {
-        try (BufferedReader reader = new BufferedReader(
-                new InputStreamReader(getAssets().open("labels.txt")))) {
-            labels = new ArrayList<>();
-            String line;
-            while ((line = reader.readLine()) != null) {
-                labels.add(line);
-            }
-        } catch (IOException e) {
-            Log.e(TAG, "Failed to load labels.", e);
-        }
-    }
-
-    private void initImageClassifier() {
-        try {
-            BaseOptions baseOptions = BaseOptions.builder().setNumThreads(4).build();
-            ImageClassifier.ImageClassifierOptions options = ImageClassifier.ImageClassifierOptions.builder()
-                    .setBaseOptions(baseOptions)
-                    .setMaxResults(1)
-                    .build();
-            imageClassifier = ImageClassifier.createFromFileAndOptions(this, "efficientnet-lite2-int8.tflite", options);
-        } catch (IOException e) {
-            Log.e(TAG, "TFLite failed to load", e);
-        }
-    }
-
     @Override
     protected void onDestroy() {
         super.onDestroy();
         cameraExecutor.shutdown();
+        if (objectRecognitionHelper != null) {
+            objectRecognitionHelper.close(); // 释放助手类资源
+        }
     }
 }

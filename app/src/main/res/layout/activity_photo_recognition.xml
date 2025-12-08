@@ -5,7 +5,7 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/surface_gray"
-    tools:context=".PhotoRecognitionActivity">
+    tools:context=".ui.photo.PhotoRecognitionActivity">
 
     <!-- 关闭按钮 -->
     <ImageButton

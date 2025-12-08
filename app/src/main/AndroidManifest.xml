@@ -17,7 +17,7 @@
 
         <!-- MainActivity is now the launcher -->
         <activity
-            android:name=".MainActivity"
+            android:name=".ui.main.MainActivity"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -26,18 +26,18 @@
         </activity>
 
         <activity
-            android:name=".RealtimeActivity"
+            android:name=".ui.ar.RealtimeActivity"
             android:exported="false"
             android:theme="@style/Theme.Material3.DayNight.NoActionBar" />
 
         <!-- Registering the new PracticeActivity -->
         <activity
-            android:name=".PracticeActivity"
+            android:name=".ui.practice.PracticeActivity"
             android:exported="false" />
 
         <!-- Registering the new PhotoRecognitionActivity -->
         <activity
-            android:name=".PhotoRecognitionActivity"
+            android:name=".ui.photo.PhotoRecognitionActivity"
             android:exported="false"
             android:theme="@style/Theme.Material3.DayNight.NoActionBar" />
 

@@ -13,7 +13,7 @@
         android:layout_height="match_parent" />
 
     <!-- 2. 对焦框 (中层) -->
-    <com.example.myapplication.FocusBoxView
+    <com.example.myapplication.view.FocusBoxView
         android:id="@+id/focusBox"
         android:layout_width="match_parent"
         android:layout_height="match_parent" />

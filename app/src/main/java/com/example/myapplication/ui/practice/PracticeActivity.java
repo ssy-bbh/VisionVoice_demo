@@ -1,4 +1,4 @@
-package com.example.myapplication;
+package com.example.myapplication.ui.practice;
 
 import android.os.Bundle;
 import android.os.Handler;
@@ -9,6 +9,7 @@ import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
 
+import com.example.myapplication.R;
 import com.google.android.material.bottomsheet.BottomSheetBehavior;
 
 public class PracticeActivity extends AppCompatActivity {
