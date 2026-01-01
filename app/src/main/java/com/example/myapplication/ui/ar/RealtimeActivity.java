@@ -5,7 +5,9 @@ import android.annotation.SuppressLint;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
+import android.graphics.RectF;
 import android.os.Bundle;
+import android.os.SystemClock;
 import android.util.Log;
 import android.view.View;
 import android.widget.ImageButton;
@@ -36,18 +38,20 @@ public class RealtimeActivity extends AppCompatActivity {
 
     private static final int CAMERA_PERMISSION_REQUEST_CODE = 101;
     private static final String TAG = "RealtimeActivity";
+    private static final long ANALYSIS_INTERVAL_MS = 500; // 每500毫秒分析一次
 
     private PreviewView previewView;
     private TextView resultTextView;
     private ExtendedFloatingActionButton confirmButton;
     private FocusBoxView focusBoxView;
-    private ExecutorService cameraExecutor; // 用于CameraX的图像分析
+    private ExecutorService cameraExecutor;
 
-    private ObjectRecognitionHelper objectRecognitionHelper; // 新增：识别助手类
+    private ObjectRecognitionHelper objectRecognitionHelper;
 
     private String currentDetectionResult = null;
     private String currentRawLabel = null;
     private boolean isResultLocked = false;
+    private long lastAnalysisTime = 0;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -62,8 +66,8 @@ public class RealtimeActivity extends AppCompatActivity {
 
         cameraExecutor = Executors.newSingleThreadExecutor();
 
-        // 初始化识别助手类
-        objectRecognitionHelper = new ObjectRecognitionHelper(this);
+        // TODO: Replace 640 with your model's actual input size
+        objectRecognitionHelper = new ObjectRecognitionHelper(this, 640, 640);
 
         if (allPermissionsGranted()) {
             startCamera();
@@ -73,18 +77,18 @@ public class RealtimeActivity extends AppCompatActivity {
         }
 
         previewView.setOnClickListener(v -> {
-            if (currentDetectionResult == null) return; // 没有结果时不允许锁定
+            if (currentDetectionResult == null) return;
 
             isResultLocked = !isResultLocked;
             if (isResultLocked) {
                 runOnUiThread(() -> {
                     confirmButton.setVisibility(View.VISIBLE);
-                    focusBoxView.setVisibility(View.VISIBLE); // Show focus box
+                    focusBoxView.setVisibility(View.VISIBLE);
                 });
             } else {
                 runOnUiThread(() -> {
                     confirmButton.setVisibility(View.GONE);
-                    focusBoxView.setVisibility(View.GONE); // Hide focus box
+                    focusBoxView.setVisibility(View.GONE);
                 });
             }
         });
@@ -115,13 +119,20 @@ public class RealtimeActivity extends AppCompatActivity {
                         .build();
 
                 imageAnalysis.setAnalyzer(cameraExecutor, imageProxy -> {
+                    // *** MODIFIED HERE: Throttling logic ***
+                    long currentTime = SystemClock.elapsedRealtime();
+                    if (currentTime - lastAnalysisTime < ANALYSIS_INTERVAL_MS) {
+                        imageProxy.close();
+                        return;
+                    }
+                    lastAnalysisTime = currentTime;
+
                     @SuppressLint("UnsafeOptInUsageError")
                     Bitmap bitmap = imageProxy.toBitmap();
 
-                    // 使用 ObjectRecognitionHelper 进行图像分类
-                    objectRecognitionHelper.classifyImage(bitmap, new ObjectRecognitionHelper.RecognitionCallback() {
+                    objectRecognitionHelper.detectObjects(bitmap, new ObjectRecognitionHelper.RecognitionCallback() {
                         @Override
-                        public void onResult(String recognizedWord, float confidence) {
+                        public void onResult(String recognizedWord, float confidence, RectF boundingBox) {
                             currentRawLabel = recognizedWord;
                             currentDetectionResult = String.format("%s (%.0f%%)", recognizedWord, confidence * 100);
 
@@ -132,13 +143,13 @@ public class RealtimeActivity extends AppCompatActivity {
 
                         @Override
                         public void onError(String errorMessage) {
-                            Log.e(TAG, "Recognition error: " + errorMessage);
+                            Log.e(TAG, "Detection error: " + errorMessage);
                             if (!isResultLocked) {
                                 runOnUiThread(() -> resultTextView.setText("Error: " + errorMessage));
                             }
                         }
                     });
-                    imageProxy.close(); // 确保图像帧被关闭
+                    imageProxy.close();
                 });
 
                 CameraSelector cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA;
@@ -174,7 +185,7 @@ public class RealtimeActivity extends AppCompatActivity {
         super.onDestroy();
         cameraExecutor.shutdown();
         if (objectRecognitionHelper != null) {
-            objectRecognitionHelper.close(); // 释放助手类资源
+            objectRecognitionHelper.close();
         }
     }
 }

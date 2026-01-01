@@ -3,6 +3,7 @@ package com.example.myapplication.ui.photo;
 import android.app.Activity;
 import android.content.Intent;
 import android.graphics.Bitmap;
+import android.graphics.RectF;
 import android.net.Uri;
 import android.os.Bundle;
 import android.provider.MediaStore;
@@ -33,11 +34,10 @@ public class PhotoRecognitionActivity extends AppCompatActivity {
     private TextView tvPhotoRecognitionResult;
     private ExtendedFloatingActionButton btnConfirmPhotoRecognition;
 
-    private ObjectRecognitionHelper objectRecognitionHelper; // 新增：识别助手类
+    private ObjectRecognitionHelper objectRecognitionHelper;
 
     private String currentRecognitionResult = null;
 
-    // ActivityResultLauncher for picking images from gallery
     private ActivityResultLauncher<Intent> pickImageLauncher;
 
     @Override
@@ -50,10 +50,10 @@ public class PhotoRecognitionActivity extends AppCompatActivity {
         btnConfirmPhotoRecognition = findViewById(R.id.btnConfirmPhotoRecognition);
         ImageButton btnClosePhoto = findViewById(R.id.btnClosePhoto);
 
-        // 初始化识别助手类
-        objectRecognitionHelper = new ObjectRecognitionHelper(this);
+        // Initialize the recognition helper with model input size
+        // TODO: Replace 640 with your model's actual input size
+        objectRecognitionHelper = new ObjectRecognitionHelper(this, 640, 640);
 
-        // Initialize ActivityResultLauncher
         pickImageLauncher = registerForActivityResult(
                 new ActivityResultContracts.StartActivityForResult(),
                 result -> {
@@ -70,14 +70,12 @@ public class PhotoRecognitionActivity extends AppCompatActivity {
                             btnConfirmPhotoRecognition.setVisibility(View.GONE);
                         }
                     } else {
-                        // User cancelled picking image, finish this activity or show a message
                         Toast.makeText(this, "Image selection cancelled", Toast.LENGTH_SHORT).show();
                         finish();
                     }
                 }
         );
 
-        // Start image picker immediately when activity is created
         openImagePicker();
 
         btnConfirmPhotoRecognition.setOnClickListener(v -> {
@@ -99,11 +97,10 @@ public class PhotoRecognitionActivity extends AppCompatActivity {
     }
 
     private void recognizeImage(Bitmap bitmap) {
-        // 使用 ObjectRecognitionHelper 进行图像分类
-        objectRecognitionHelper.classifyImage(bitmap, new ObjectRecognitionHelper.RecognitionCallback() {
+        objectRecognitionHelper.detectObjects(bitmap, new ObjectRecognitionHelper.RecognitionCallback() {
             @Override
-            public void onResult(String recognizedWord, float confidence) {
-                currentRecognitionResult = recognizedWord; // Store the raw label for practice activity
+            public void onResult(String recognizedWord, float confidence, RectF boundingBox) {
+                currentRecognitionResult = recognizedWord;
                 String displayResult = String.format("%s (%.0f%%)", recognizedWord, confidence * 100);
                 runOnUiThread(() -> {
                     tvPhotoRecognitionResult.setText(displayResult);
@@ -113,7 +110,7 @@ public class PhotoRecognitionActivity extends AppCompatActivity {
 
             @Override
             public void onError(String errorMessage) {
-                Log.e(TAG, "Recognition error: " + errorMessage);
+                Log.e(TAG, "Detection error: " + errorMessage);
                 runOnUiThread(() -> {
                     tvPhotoRecognitionResult.setText("Error: " + errorMessage);
                     btnConfirmPhotoRecognition.setVisibility(View.GONE);
@@ -127,7 +124,7 @@ public class PhotoRecognitionActivity extends AppCompatActivity {
     protected void onDestroy() {
         super.onDestroy();
         if (objectRecognitionHelper != null) {
-            objectRecognitionHelper.close(); // 释放助手类资源
+            objectRecognitionHelper.close();
         }
     }
 }
