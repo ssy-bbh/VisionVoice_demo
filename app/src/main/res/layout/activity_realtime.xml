@@ -10,13 +10,21 @@
     <androidx.camera.view.PreviewView
         android:id="@+id/viewFinder"
         android:layout_width="match_parent"
-        android:layout_height="match_parent" />
+        android:layout_height="match_parent"
+        app:scaleType="fillStart" />
 
-    <!-- 2. 对焦框 (中层) -->
-    <com.example.myapplication.view.FocusBoxView
-        android:id="@+id/focusBox"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent" />
+    <!-- 2. 识别框 (中层) -->
+    <com.example.myapplication.view.OverlayView
+        android:id="@+id/overlayView"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+
+        android:background="@android:color/transparent"
+        android:elevation="10dp" />
 
     <!-- 3. HUD UI (顶层) -->
     

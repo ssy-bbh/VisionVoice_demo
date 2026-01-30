@@ -31,7 +31,7 @@ Besides that, the teachers also try to give chance to all students in participat
 #### 参考文献格式
 Edge, D., Searle, E., Chiu, K., Zhao, J., & Landay, J. A. (2014). MicroMandarin: Mobile Language Learning in Context. Proceedings of the SIGCHI Conference on Human Factors in Computing Systems, 1-10. [2]
 
-
+![](矢量图/用例图.pdf)
 
 ### 1.3 目的
 本项目的主要目标是开发一款名为 VisionVoice 的安卓应用，该应用具备以下核心能力：
@@ -76,37 +76,7 @@ Edge, D., Searle, E., Chiu, K., Zhao, J., & Landay, J. A. (2014). MicroMandarin:
 ### 3.1 项目工作流程
 本项目的工作流程设计旨在实现清晰的用户路径和模块化的代码结构。
 
-```plaintext
-[用户启动应用]
-      ↓
-[MainActivity 加载]
-      ↓
-[显示 HomeFragment (主页)]
-      ↓
-┌─────┴─────┐
-↓             ↓
-[点击 "AR Scan"]  [点击 "Photo"]
-↓             ↓
-[启动 RealtimeActivity] [启动 PhotoRecognitionActivity]
-      ↓             ↓
-      ┌─────────────┴─────────────┐
-      ↓                             ↓
-[摄像头/图库获取图像 (Bitmap)]        ↓
-      ↓                             ↓
-[调用 ObjectRecognitionHelper.detectObjects()]
-      ↓
-[模型在后台线程进行推理]
-      ↓
-[通过回调返回置信度最高的识别结果 (英文单词、边界框)]
-      ↓
-[在UI上显示结果]
-      ↓
-[用户点击 "Learn This!"]
-      ↓
-[启动 PracticeActivity (并传递单词)]
-      ↓
-[显示练习页面和模拟录音流程]
-```
+![](矢量图/流程图.pdf)
 
 ### 3.2 设计过程与模型迭代
 项目的开发与设计遵循了迭代和重构的原则：
@@ -153,41 +123,10 @@ Edge, D., Searle, E., Chiu, K., Zhao, J., & Landay, J. A. (2014). MicroMandarin:
     *   **异步回调**: 通过 `RecognitionCallback` 接口，将最终处理好的单个最佳结果异步返回给UI线程。
 *   **实时识别优化 (`RealtimeActivity`)**: 在 `ImageAnalysis` 的 `setAnalyzer` 回调中，增加了一个时间戳判断逻辑，将识别频率限制在每500毫秒一次，有效避免了CPU的过度消耗和UI的频繁闪烁。
 
+![](矢量图/时序图.pdf)
 ### 4.2 软件架构图
-
-```plaintext
-+-----------------------+      +--------------------------+      +--------------------------+
-|   RealtimeActivity    |      | PhotoRecognitionActivity |      |    PracticeActivity      |
-| (UI - AR Scan)        |      | (UI - Photo)             |      | (UI - Pronunciation)     |
-+-----------------------+      +--------------------------+      +--------------------------+
-           |                              |                              ^
-           | (Bitmap from CameraX)        | (Bitmap from Gallery)        | (Intent with "extra_word")
-           |                              |                              |
-           └──────────────┬───────────────┘                              |
-                          |                                              |
-                          v                                              |
-+----------------------------------------------------------------------+ |
-| ObjectRecognitionHelper (ml)                                         | |
-|----------------------------------------------------------------------| |
-| + detectObjects(Bitmap, Callback) -> onResult(word, conf, box)       |─┘
-| - initInterpreter()                                                  |
-| - postProcess() <Optimized>                                          |
-| - imageProcessor (ResizeOp + NormalizeOp) <Optimized>                |
-+----------------------------------------------------------------------+ 
-                          |
-                          | (ByteBuffer)
-                          v
-+----------------------------------------------------------------------+
-| TensorFlow Lite Interpreter API                                      |
-|----------------------------------------------------------------------|
-| + Interpreter.run(input, output)                                     |
-+----------------------------------------------------------------------+
-                          |
-                          v
-+----------------------------------------------------------------------+
-| yolov8n.tflite & labels.txt (assets)                                 |
-+----------------------------------------------------------------------+
-```
+pandoc --version
+![](矢量图/组件图.pdf)
 
 ### 4.3 挑战与解决方案
 在开发过程中，我们定位并解决了一系列关键的技术问题，这些问题不仅是简单的Bug修复，更是对移动端AI工程实践的深度探索。

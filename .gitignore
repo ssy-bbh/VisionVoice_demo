@@ -1,3 +1,4 @@
+# --- Android 核心构建产物 ---
 *.iml
 .gradle
 /local.properties
@@ -13,3 +14,32 @@
 .externalNativeBuild
 .cxx
 local.properties
+
+# --- 模块级别的构建产物 ---
+# 过滤每个模块下的 build 文件夹
+**/build/
+
+# --- Kotlin/Java 相关 ---
+*.pyc
+*.xml
+# 注意：如果你需要保留代码样式配置，可以取消注释下面这行
+# !/.idea/codeStyles/
+
+# --- 模型文件 (VisionVoice 特有) ---
+# 如果你的 TFLite 模型非常大，建议不要直接推送到 Git（除非使用了 LFS）
+# 如果你想让仓库保持轻量，可以取消下面这行的注释，然后手动分发模型
+# *.tflite
+
+# --- 签名文件 (非常重要！切勿泄露) ---
+*.jks
+*.keystore
+*.p12
+*.google_services.json
+
+# --- 测试/日志 ---
+/screenshots
+*.log
+
+# --- 系统文件 ---
+.DS_Store
+Thumbs.db

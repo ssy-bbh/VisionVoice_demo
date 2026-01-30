@@ -1,0 +1,187 @@
+' ====================================
+' VisionVoice - All Project Diagrams
+' ====================================
+
+' This file contains multiple diagrams. Each diagram is enclosed in its own startuml ... @enduml block.
+
+' ====================================
+' 1. Use Case Diagram (English)
+' ====================================
+
+@startuml
+title Use Case Diagram
+
+left to right direction
+actor "User" as User
+
+rectangle VisionVoice {
+  usecase "AR Real-time Scan" as UC_AR
+  usecase "Static Photo Recognition" as UC_PHOTO
+  usecase "Perform Pronunciation Practice" as UC_PRACTICE
+}
+
+User -- UC_AR
+User -- UC_PHOTO
+UC_AR .> UC_PRACTICE : <<include>>
+UC_PHOTO .> UC_PRACTICE : <<include>>
+@enduml
+
+
+' ====================================
+' 2. Activity Diagram (English)
+' ====================================
+
+@startuml
+title Project Workflow Activity Diagram
+
+' Style settings for better readability
+skinparam activity {
+  BackgroundColor #F2F2F7
+  BorderColor #8E8E93
+  FontColor #1C1C1E
+  ArrowColor #6200EE
+}
+skinparam note {
+    BackgroundColor #FFF0D6
+    BorderColor #FF9500
+}
+
+start
+
+:User starts application;
+:Display Home Page (HomeFragment);
+
+fork
+  :Click "AR Scan";
+  :Start RealtimeActivity;
+fork again
+  :Click "Photo";
+  :Start PhotoRecognitionActivity;
+end fork
+
+:Get Image (Bitmap);
+note right: From either camera or gallery
+
+:Call ObjectRecognitionHelper for detection;
+
+partition "Background Inference Thread" {
+    :Execute Image Pre-processing\n(Resize, Normalize);
+    :Run TFLite Interpreter;
+    :Execute Result Post-processing\n(Parse, Sort, Coordinate Transform);
+}
+
+:Return best result via callback;
+note left: Pass result from background\nthread back to UI thread
+
+:Display recognition result on UI;
+
+:User clicks "Learn This!";
+
+:Start PracticeActivity\nand pass the recognized word;
+
+:Display Practice Page;
+
+stop
+@enduml
+
+
+' ====================================
+' 3. Sequence Diagram (English)
+' ====================================
+
+@startuml
+title Realtime Recognition Sequence Diagram
+
+actor User
+participant "RealtimeActivity" as Activity
+participant "ImageAnalysis" as CameraX
+participant "ObjectRecognitionHelper" as Helper
+participant "TFLite Interpreter" as Interpreter
+
+activate Activity
+CameraX -> Activity : onFrame(imageProxy)
+note right of Activity : Throttle Check: \n> 500ms since last analysis
+
+activate Helper
+Activity -> Helper : detectObjects(bitmap, callback)
+
+Helper -> Helper : activate #LightBlue
+note over Helper #LightBlue: **Background thread starts**
+Helper -> Helper : Image Pre-processing (Resize, Normalize)
+
+activate Interpreter
+Helper -> Interpreter : run(input, output)
+Interpreter --> Helper : Return raw output tensor
+deactivate Interpreter
+
+Helper -> Helper : postProcess(output) (Algorithm Optimization)
+Helper -> Activity : callback.onResult(word, conf, box)
+note over Helper #LightBlue: **Background thread ends**
+deactivate Helper
+deactivate Helper
+
+Activity -> Activity : runOnUiThread { updateUI() }
+
+@enduml
+
+
+' ====================================
+' 4. Component Diagram (Already in English)
+' ====================================
+
+@startuml
+title Software Component Diagram
+
+' Style settings
+skinparam component {
+  BackgroundColor #F2F2F7
+  BorderColor #8E8E93
+  FontColor #1C1C1E
+  ArrowColor #6200EE
+}
+skinparam interface {
+    BackgroundColor #FFF0D6
+    BorderColor #FF9500
+}
+skinparam artifact {
+    BackgroundColor #EBEBEA
+    BorderColor #1C1C1E
+}
+
+' Define components
+package "UI Layer" {
+  [RealtimeActivity] as Realtime
+  [PhotoRecognitionActivity] as Photo
+}
+
+package "ML Layer" {
+  [ObjectRecognitionHelper] as Helper
+  interface RecognitionCallback
+}
+
+package "TFLite" {
+    [Interpreter API] as TfliteApi
+}
+
+artifact "yolov8n.tflite" as ModelFile
+artifact "labels.txt" as LabelFile
+
+' Corrected syntax for relationships
+
+' UI Layer depends on ML Layer
+Realtime --down-> Helper
+Photo --down-> Helper
+
+' UI Layer components IMPLEMENT the callback interface
+Realtime ..|> RecognitionCallback
+Photo ..|> RecognitionCallback
+
+' ML Layer USES the callback interface
+Helper ..> RecognitionCallback
+
+' ML Layer depends on TFLite and asset files
+Helper --down-> TfliteApi
+TfliteApi --down-> ModelFile
+Helper --down-> LabelFile
+
+@enduml

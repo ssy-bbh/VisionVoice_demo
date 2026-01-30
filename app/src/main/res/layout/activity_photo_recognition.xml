@@ -54,6 +54,11 @@
             android:scaleType="centerCrop"
             android:background="@color/surface_gray"
             android:src="@android:drawable/ic_menu_gallery" />
+
+        <com.example.myapplication.view.OverlayView
+            android:id="@+id/photoOverlayView"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
     </androidx.cardview.widget.CardView>
 
     <!-- 识别结果展示 -->
