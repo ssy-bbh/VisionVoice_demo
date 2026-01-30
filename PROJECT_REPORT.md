@@ -31,7 +31,7 @@ Besides that, the teachers also try to give chance to all students in participat
 #### 参考文献格式
 Edge, D., Searle, E., Chiu, K., Zhao, J., & Landay, J. A. (2014). MicroMandarin: Mobile Language Learning in Context. Proceedings of the SIGCHI Conference on Human Factors in Computing Systems, 1-10. [2]
 
-![](矢量图/用例图.pdf)
+![](graphics/用例图.pdf)
 
 ### 1.3 目的
 本项目的主要目标是开发一款名为 VisionVoice 的安卓应用，该应用具备以下核心能力：
@@ -76,7 +76,7 @@ Edge, D., Searle, E., Chiu, K., Zhao, J., & Landay, J. A. (2014). MicroMandarin:
 ### 3.1 项目工作流程
 本项目的工作流程设计旨在实现清晰的用户路径和模块化的代码结构。
 
-![](矢量图/流程图.pdf)
+![](graphics/流程图.pdf)
 
 ### 3.2 设计过程与模型迭代
 项目的开发与设计遵循了迭代和重构的原则：
@@ -123,10 +123,10 @@ Edge, D., Searle, E., Chiu, K., Zhao, J., & Landay, J. A. (2014). MicroMandarin:
     *   **异步回调**: 通过 `RecognitionCallback` 接口，将最终处理好的单个最佳结果异步返回给UI线程。
 *   **实时识别优化 (`RealtimeActivity`)**: 在 `ImageAnalysis` 的 `setAnalyzer` 回调中，增加了一个时间戳判断逻辑，将识别频率限制在每500毫秒一次，有效避免了CPU的过度消耗和UI的频繁闪烁。
 
-![](矢量图/时序图.pdf)
+![](graphics/时序图.pdf)
 ### 4.2 软件架构图
 pandoc --version
-![](矢量图/组件图.pdf)
+![](graphics/组件图.pdf)
 
 ### 4.3 挑战与解决方案
 在开发过程中，我们定位并解决了一系列关键的技术问题，这些问题不仅是简单的Bug修复，更是对移动端AI工程实践的深度探索。
