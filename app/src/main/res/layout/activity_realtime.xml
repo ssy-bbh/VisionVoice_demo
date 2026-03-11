@@ -27,35 +27,7 @@
         android:elevation="10dp" />
 
     <!-- 3. HUD UI (顶层) -->
-    
-    <!-- 顶部模式切换 -->
-    <LinearLayout
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:background="@drawable/bg_capsule_translucent"
-        android:padding="4dp"
-        app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent"
-        android:layout_marginTop="48dp">
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Stream"
-            android:textColor="@color/white"
-            android:textStyle="bold"
-            android:paddingHorizontal="16dp"
-            android:paddingVertical="6dp"
-            android:background="@drawable/bg_capsule_translucent" 
-            android:backgroundTint="@color/brand_orange" />
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Photo"
-            android:textColor="#CCFFFFFF"
-            android:paddingHorizontal="16dp"
-            android:paddingVertical="6dp" />
-    </LinearLayout>
+
     
     <!-- 关闭按钮 -->
     <ImageButton
