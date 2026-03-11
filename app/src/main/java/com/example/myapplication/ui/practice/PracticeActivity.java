@@ -250,53 +250,111 @@ public class PracticeActivity extends AppCompatActivity {
     /**
      * 4. 真实渲染逻辑：根据 JSON 结果动态生成红绿音标块
      */
+    /**
+     * 动态渲染上下对比的音标打分结果
+     */
     private void updateUIWithFeedback(JSONArray refPhonemes, JSONArray userPhonemes, JSONArray feedback) {
-        llPhonemeContainer.removeAllViews(); // 清空旧数据
+        LinearLayout llContainer = findViewById(R.id.llPhonemeContainer);
+        llContainer.removeAllViews(); // 清空旧数据
 
         try {
-            int correctCount = 0;
+            // 【关键点】：在这里定义 totalScore，确保整个 try 块都能用到它
+            float totalScore = 0f;
             int totalCount = refPhonemes.length();
+            int validPhonemeCount = 0;
 
             for (int i = 0; i < totalCount; i++) {
                 String ref = refPhonemes.getString(i);
+                String user = userPhonemes.getString(i);
                 String fb = feedback.getString(i);
 
-                TextView tv = new TextView(this);
-                // 这里显示参考音素，如果漏读或多读，你也可以选择显示 userPhonemes
-                tv.setText(ref);
-                tv.setTextSize(20);
-                tv.setPadding(32, 16, 32, 16);
-                tv.setTypeface(null, android.graphics.Typeface.BOLD);
+                if (!ref.equals("-")) validPhonemeCount++;
 
-                LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.WRAP_CONTENT,
-                        LinearLayout.LayoutParams.WRAP_CONTENT
-                );
-                params.setMargins(0, 0, 16, 0); // 每个音素块之间的间距
-                tv.setLayoutParams(params);
+                // 1. 创建上下两行的容器
+                LinearLayout pairLayout = new LinearLayout(this);
+                pairLayout.setOrientation(LinearLayout.VERTICAL);
+                pairLayout.setGravity(android.view.Gravity.CENTER);
+                LinearLayout.LayoutParams pairParams = new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+                pairParams.setMargins(0, 0, 16, 0);
+                pairLayout.setLayoutParams(pairParams);
 
-                // 根据 feedback 判断颜色 (Match 为正确)
+                // 2. 顶部的参考音标
+                TextView tvRef = new TextView(this);
+                tvRef.setText(ref.equals("-") ? " " : ref);
+                tvRef.setTextSize(16);
+                tvRef.setTextColor(android.graphics.Color.parseColor("#9E9E9E"));
+                tvRef.setGravity(android.view.Gravity.CENTER);
+                tvRef.setPadding(0, 0, 0, 4);
+
+                // 3. 底部的用户发音
+                TextView tvUser = new TextView(this);
+                tvUser.setText(user.equals("-") ? "×" : user);
+                tvUser.setTextSize(20);
+                tvUser.setPadding(24, 12, 24, 12);
+                tvUser.setTypeface(null, android.graphics.Typeface.BOLD);
+                tvUser.setGravity(android.view.Gravity.CENTER);
+
+                // 4. 三级容错上色与加权计分
                 if (fb.equals("Match")) {
-                    tv.setBackgroundResource(R.drawable.bg_phoneme_correct);
-                    tv.setTextColor(ContextCompat.getColor(this, R.color.success_green));
-                    correctCount++;
+                    tvUser.setBackgroundResource(R.drawable.bg_phoneme_correct);
+                    tvUser.setTextColor(ContextCompat.getColor(this, R.color.success_green));
+                    totalScore += 1.0f; // 完美，得 1 分
+                } else if (fb.startsWith("Flaw:")) {
+                    String[] parts = fb.split(":");
+                    String reason = parts.length > 1 ? parts[1] : "发音有瑕疵";
+
+                    tvUser.setBackgroundResource(R.drawable.bg_phoneme_warning);
+                    tvUser.setTextColor(android.graphics.Color.parseColor("#F57C00"));
+                    totalScore += 0.6f; // 瑕疵，得 0.6 分
+
+                    // 点击弹出诊断原因
+                    tvUser.setOnClickListener(v -> android.widget.Toast.makeText(this, "AI诊断: " + reason, android.widget.Toast.LENGTH_SHORT).show());
                 } else {
-                    // 包含 Insertion(多读), Deletion(漏读), Substitution(读错)
-                    tv.setBackgroundResource(R.drawable.bg_phoneme_error);
-                    tv.setTextColor(ContextCompat.getColor(this, R.color.error_red));
+                    tvUser.setBackgroundResource(R.drawable.bg_phoneme_error);
+                    tvUser.setTextColor(ContextCompat.getColor(this, R.color.error_red));
+                    totalScore += 0f; // 错误，得 0 分
                 }
 
-                llPhonemeContainer.addView(tv);
+                // 5. 拼装 UI
+                pairLayout.addView(tvRef);
+                pairLayout.addView(tvUser);
+                llContainer.addView(pairLayout);
             }
 
-            // 更新左侧的圆形百分比得分
-            if (totalCount > 0) {
-                int score = (int) (((float) correctCount / totalCount) * 100);
-                tvScore.setText(score + "%");
+            // 6. 核心业务逻辑：【非线性教育打分曲线】
+            if (validPhonemeCount > 0) {
+                TextView tvScore = findViewById(R.id.tvScore);
+
+                // 计算底层原始正确率
+                float rawAccuracy = totalScore / totalCount;
+                int displayScore = 0;
+
+                // 曲线映射 (高分段放水，中分段保及格，低分段惩罚)
+                if (rawAccuracy >= 0.8f) {
+                    displayScore = (int) (90 + (rawAccuracy - 0.8f) * 50);
+                } else if (rawAccuracy >= 0.5f) {
+                    displayScore = (int) (60 + (rawAccuracy - 0.5f) * 100);
+                } else {
+                    displayScore = (int) (rawAccuracy * 120);
+                }
+
+                // 兜底，限制在 0-100 之间
+                displayScore = Math.max(0, Math.min(100, displayScore));
+                tvScore.setText(displayScore + "%");
+
+                // 根据最终展示分数变色
+                if (displayScore >= 80) {
+                    tvScore.setTextColor(ContextCompat.getColor(this, R.color.success_green));
+                } else if (displayScore >= 60) {
+                    tvScore.setTextColor(android.graphics.Color.parseColor("#F57C00"));
+                } else {
+                    tvScore.setTextColor(ContextCompat.getColor(this, R.color.error_red));
+                }
             }
 
         } catch (Exception e) {
-            Log.e(TAG, "UI更新异常", e);
+            android.util.Log.e("PracticeActivity", "UI更新异常", e);
         }
     }
 
