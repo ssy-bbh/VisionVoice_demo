@@ -4,6 +4,8 @@ import android.Manifest;
 import android.content.pm.PackageManager;
 import android.media.MediaRecorder;
 import android.os.Bundle;
+import android.speech.tts.TextToSpeech;
+import java.util.Locale;
 import android.util.Log;
 import android.view.View;
 import android.widget.LinearLayout;
@@ -34,7 +36,8 @@ import okhttp3.RequestBody;
 import okhttp3.Response;
 
 public class PracticeActivity extends AppCompatActivity {
-
+    // 【新增】：TTS 引擎对象
+    private TextToSpeech textToSpeech;
     private static final String TAG = "PracticeActivity";
     private static final int REQUEST_RECORD_AUDIO_PERMISSION = 200;
 
@@ -82,7 +85,31 @@ public class PracticeActivity extends AppCompatActivity {
         TextView tvPhonetic = findViewById(R.id.tvPhonetic);
         tvPhonetic.setText("加载中...");
         fetchPhonetics(targetWord);
+        // 【新增 1】：初始化 TTS 引擎，并设置为美式英语
+        textToSpeech = new TextToSpeech(this, status -> {
+            if (status == TextToSpeech.SUCCESS) {
+                // 设置语言为美式英语 (US)
+                int result = textToSpeech.setLanguage(Locale.US);
+                if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
+                    Log.e(TAG, "TTS不支持该语言或缺少语言包");
+                }
+            } else {
+                Log.e(TAG, "TTS初始化失败");
+            }
+        });
 
+        // 【新增 2】：绑定喇叭按钮的点击事件
+        findViewById(R.id.btnTTS).setOnClickListener(v -> {
+            if (targetWord != null && !targetWord.isEmpty()) {
+                // QUEUE_FLUSH 意味着如果用户疯狂连按，会打断之前的发音立刻读最新的
+                textToSpeech.speak(targetWord, TextToSpeech.QUEUE_FLUSH, null, null);
+
+                // 加个小动画让按钮有反馈感 (可选)
+                v.animate().scaleX(1.2f).scaleY(1.2f).setDuration(100).withEndAction(() -> {
+                    v.animate().scaleX(1.0f).scaleY(1.0f).setDuration(100).start();
+                }).start();
+            }
+        });
         // 3. 设置录音文件保存路径 (存在 App 的内部缓存目录中)
         audioFilePath = getExternalCacheDir().getAbsolutePath() + "/user_record.m4a";
 
@@ -276,6 +303,10 @@ public class PracticeActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        if (textToSpeech != null) {
+            textToSpeech.stop();
+            textToSpeech.shutdown();
+        }
         if (mediaRecorder != null) {
             mediaRecorder.release();
             mediaRecorder = null;
