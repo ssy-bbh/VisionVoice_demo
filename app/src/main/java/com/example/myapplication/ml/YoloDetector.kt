@@ -188,7 +188,7 @@ class YoloDetector(
         val results = ArrayList<Result>()
         val confThreshold = 0.50f // 只显示置信度 > 50% 的结果
         val iouThreshold = 0.45f
-
+        // 接管原始输出进行张量解析
         for (i in 0 until outputAnchors) {
             var maxScore = 0f
             var maxClassIndex = -1

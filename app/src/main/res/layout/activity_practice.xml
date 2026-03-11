@@ -1,19 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.coordinatorlayout.widget.CoordinatorLayout 
+<androidx.coordinatorlayout.widget.CoordinatorLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/white">
 
-    <!-- 主内容区 -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:orientation="vertical"
         android:padding="24dp">
-        
-        <!-- 顶部导航 -->
+
         <FrameLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -34,7 +32,6 @@
                 android:textColor="@color/text_primary"/>
         </FrameLayout>
 
-        <!-- 图片卡片 -->
         <androidx.cardview.widget.CardView
             android:layout_width="match_parent"
             android:layout_height="220dp"
@@ -42,17 +39,15 @@
             app:cardElevation="0dp"
             app:cardBackgroundColor="@color/surface_gray"
             android:layout_marginTop="24dp">
-            <!-- 实际开发中用 ImageView src 替换 -->
             <ImageView
                 android:id="@+id/ivTargetImage"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
                 android:scaleType="centerInside"
                 android:src="@android:drawable/ic_menu_gallery"
-                app:tint="@color/text_secondary"/> 
+                app:tint="@color/text_secondary"/>
         </androidx.cardview.widget.CardView>
 
-        <!-- 单词与音标 -->
         <TextView
             android:id="@+id/tvTargetWord"
             android:layout_width="match_parent"
@@ -75,7 +70,6 @@
 
         <Space android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1"/>
 
-        <!-- 底部控制栏 -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -112,11 +106,9 @@
                     android:elevation="6dp"/>
             </FrameLayout>
 
-            <View android:layout_width="56dp" android:layout_height="56dp"/> <!-- 占位平衡 -->
-        </LinearLayout>
+            <View android:layout_width="56dp" android:layout_height="56dp"/> </LinearLayout>
     </LinearLayout>
 
-    <!-- Bottom Sheet Feedback -->
     <LinearLayout
         android:id="@+id/bottomSheetFeedback"
         android:layout_width="match_parent"
@@ -140,8 +132,9 @@
             android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:gravity="center_vertical">
-            <!-- 简单的圆形分数示意 -->
+
             <TextView
+                android:id="@+id/tvScore"
                 android:layout_width="80dp"
                 android:layout_height="80dp"
                 android:background="@drawable/bg_circle_gray"
@@ -150,6 +143,7 @@
                 android:textColor="@color/success_green"
                 android:textStyle="bold"
                 android:textSize="20sp"/>
+
             <LinearLayout
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
@@ -175,28 +169,12 @@
             android:layout_height="wrap_content"/>
 
         <LinearLayout
+            android:id="@+id/llPhonemeContainer"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="horizontal">
-            <TextView
-                android:text="Ap"
-                android:background="@drawable/bg_phoneme_correct"
-                android:textColor="@color/success_green"
-                android:paddingHorizontal="16dp"
-                android:paddingVertical="8dp"
-                android:textStyle="bold"
-                android:layout_marginEnd="8dp"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"/>
-            <TextView
-                android:text="ple"
-                android:background="@drawable/bg_phoneme_error"
-                android:textColor="@color/error_red"
-                android:paddingHorizontal="16dp"
-                android:paddingVertical="8dp"
-                android:textStyle="bold"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"/>
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="16dp">
         </LinearLayout>
 
         <Button

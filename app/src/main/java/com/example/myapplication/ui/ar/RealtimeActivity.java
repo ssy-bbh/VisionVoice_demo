@@ -75,6 +75,7 @@ public class RealtimeActivity extends AppCompatActivity {
         }
 
         ImageButton btnClose = findViewById(R.id.btnClose);
+        //隔离ui线程和物理线程
         cameraExecutor = Executors.newSingleThreadExecutor();
 
         // 3. 初始化 YOLO
@@ -150,6 +151,7 @@ public class RealtimeActivity extends AppCompatActivity {
                 // 2. 分析器配置
                 ImageAnalysis imageAnalysis = new ImageAnalysis.Builder()
                         .setResolutionSelector(resolutionSelector)
+                        //永远只给最新的一帧给模型，避免了帧堆积导致的问题
                         .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                         .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
                         .build();
@@ -180,7 +182,8 @@ public class RealtimeActivity extends AppCompatActivity {
                         runOnUiThread(() -> {
                             if (results != null && !results.isEmpty()) {
                                 // 只取第一名 (Top 1)
-                                YoloDetector.Result best = results.get(0);
+                                /* YoloDetector.Result best = results.get(0);
+
 
                                 // 构造单元素列表传给 OverlayView
                                 List<YoloDetector.Result> topOneList = new ArrayList<>();
@@ -190,7 +193,22 @@ public class RealtimeActivity extends AppCompatActivity {
                                     overlayView.setResults(topOneList);
                                 }
 
+
                                 // 更新底部文字
+                                String labelText = best.getLabel() + String.format(" %.0f%%", best.getScore() * 100);
+                                resultTextView.setText(labelText); */
+                                // 【修改点】：保留最多 3 个框，而不是只保留 1 个
+                                List<YoloDetector.Result> topResults = new ArrayList<>();
+                                for (int i = 0; i < Math.min(3, results.size()); i++) {
+                                    topResults.add(results.get(i));
+                                }
+
+                                if (overlayView != null) {
+                                    overlayView.setResults(topResults); // 把列表传给 UI 绘制红绿框
+                                }
+
+                                // 底部文字仍然只显示置信度最高（第一名）的那个单词
+                                YoloDetector.Result best = topResults.get(0);
                                 String labelText = best.getLabel() + String.format(" %.0f%%", best.getScore() * 100);
                                 resultTextView.setText(labelText);
 
