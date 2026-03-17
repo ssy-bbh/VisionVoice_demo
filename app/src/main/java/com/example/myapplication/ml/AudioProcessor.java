@@ -1,5 +1,6 @@
 package com.example.myapplication.ml;
 
+import android.media.MediaCodec;
 import android.media.MediaExtractor;
 import android.media.MediaFormat;
 import android.util.Log;
@@ -8,152 +9,199 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * 音频预处理工具类
- * 负责加载音频文件并转换为 Wav2Vec2 所需的格式
- * 
- * 输入：MPEG-4/AAC 格式的录音文件
+ *
+ * 输入：MPEG-4/AAC 格式的录音文件（.m4a）
  * 输出：16kHz PCM float32 数组（归一化到 [-1, 1]）
+ *
+ * 关键：.m4a 是 AAC 压缩格式，必须用 MediaCodec 解码为 PCM，
+ *       不能直接用 MediaExtractor.readSampleData() 当 PCM 用。
  */
-public class   AudioProcessor {
+public class AudioProcessor {
     private static final String TAG = "AudioProcessor";
     private static final int TARGET_SAMPLE_RATE = 16000;
-    
+    private static final long TIMEOUT_US = 10000; // 10ms
+
     /**
-     * 加载音频文件并转换为 16kHz PCM float 数组
-     * 
-     * @param audioFile 音频文件（MPEG-4/AAC 格式）
-     * @return 16kHz PCM 数据（float32，归一化到 [-1, 1]）
-     * @throws IOException 读取音频失败
+     * 加载 .m4a 文件，解码为 16kHz PCM float32 数组
      */
     public static float[] loadAndPreprocess(File audioFile) throws IOException {
         MediaExtractor extractor = new MediaExtractor();
         extractor.setDataSource(audioFile.getAbsolutePath());
-        
-        int trackIndex = selectAudioTrack(extractor);
-        if (trackIndex < 0) {
+
+        // 1. 找到音频轨道
+        int trackIndex = -1;
+        MediaFormat format = null;
+        for (int i = 0; i < extractor.getTrackCount(); i++) {
+            MediaFormat f = extractor.getTrackFormat(i);
+            String mime = f.getString(MediaFormat.KEY_MIME);
+            if (mime != null && mime.startsWith("audio/")) {
+                trackIndex = i;
+                format = f;
+                break;
+            }
+        }
+        if (trackIndex < 0 || format == null) {
+            extractor.release();
             throw new IOException("未找到音频轨道");
         }
-        
-        MediaFormat format = extractor.getTrackFormat(trackIndex);
-        int sampleRate = format.getInteger(MediaFormat.KEY_SAMPLE_RATE);
+
+        int sourceSampleRate = format.getInteger(MediaFormat.KEY_SAMPLE_RATE);
         int channelCount = format.getInteger(MediaFormat.KEY_CHANNEL_COUNT);
-        
-        Log.d(TAG, "音频信息：采样率=" + sampleRate + ", 声道数=" + channelCount);
-        
+        String mime = format.getString(MediaFormat.KEY_MIME);
+
+        Log.d(TAG, "音频信息：mime=" + mime
+                + " 采样率=" + sourceSampleRate
+                + " 声道数=" + channelCount);
+
         extractor.selectTrack(trackIndex);
-        
-        // 读取音频数据
-        ByteBuffer buffer = ByteBuffer.allocate((int)audioFile.length() * 4);
-        
-        while (true) {
-            int sampleSize = extractor.readSampleData(buffer, 0);
-            if (sampleSize < 0) break;
-            extractor.advance();
+
+        // 2. 用 MediaCodec 解码 AAC → PCM
+        MediaCodec codec = MediaCodec.createDecoderByType(mime);
+        codec.configure(format, null, null, 0);
+        codec.start();
+
+        List<byte[]> pcmChunks = new ArrayList<>();
+        boolean inputDone = false;
+        boolean outputDone = false;
+        MediaCodec.BufferInfo bufferInfo = new MediaCodec.BufferInfo();
+
+        while (!outputDone) {
+            // 喂数据给解码器
+            if (!inputDone) {
+                int inputIndex = codec.dequeueInputBuffer(TIMEOUT_US);
+                if (inputIndex >= 0) {
+                    ByteBuffer inputBuf = codec.getInputBuffer(inputIndex);
+                    inputBuf.clear();
+                    int sampleSize = extractor.readSampleData(inputBuf, 0);
+                    if (sampleSize < 0) {
+                        // 数据读完，发 EOS
+                        codec.queueInputBuffer(inputIndex, 0, 0, 0,
+                                MediaCodec.BUFFER_FLAG_END_OF_STREAM);
+                        inputDone = true;
+                    } else {
+                        long presentationTimeUs = extractor.getSampleTime();
+                        codec.queueInputBuffer(inputIndex, 0, sampleSize,
+                                presentationTimeUs, 0);
+                        extractor.advance();
+                    }
+                }
+            }
+
+            // 取解码后的 PCM 数据
+            int outputIndex = codec.dequeueOutputBuffer(bufferInfo, TIMEOUT_US);
+            if (outputIndex >= 0) {
+                ByteBuffer outputBuf = codec.getOutputBuffer(outputIndex);
+                if (outputBuf != null && bufferInfo.size > 0) {
+                    // 严格按照底层提供的 offset 和 limit 读取
+                    outputBuf.position(bufferInfo.offset);
+                    outputBuf.limit(bufferInfo.offset + bufferInfo.size);
+
+                    byte[] chunk = new byte[bufferInfo.size];
+                    outputBuf.get(chunk);
+                    pcmChunks.add(chunk);
+                }
+                codec.releaseOutputBuffer(outputIndex, false);
+                if ((bufferInfo.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
+                    outputDone = true;
+                }
+            }
         }
-        
+
+        codec.stop();
+        codec.release();
         extractor.release();
-        
-        // 转换为 float 数组
-        buffer.rewind();
-        buffer.order(ByteOrder.LITTLE_ENDIAN);
-        
-        return resampleAndMix(buffer, sampleRate, channelCount);
+
+        // 3. 合并所有 PCM 块
+        int totalBytes = 0;
+        for (byte[] chunk : pcmChunks) totalBytes += chunk.length;
+
+        ByteBuffer pcmBuffer = ByteBuffer.allocate(totalBytes).order(ByteOrder.LITTLE_ENDIAN);
+        for (byte[] chunk : pcmChunks) pcmBuffer.put(chunk);
+        pcmBuffer.rewind();
+
+        Log.d(TAG, "解码完成，PCM 字节数=" + totalBytes);
+
+        // 4. PCM int16 → float32，混音，重采样，归一化
+        return resampleAndNormalize(pcmBuffer, sourceSampleRate, channelCount);
     }
-    
+
     /**
-     * 选择音频轨道
+     * int16 PCM → float32，多声道混音，重采样到 16kHz，归一化
      */
-    private static int selectAudioTrack(MediaExtractor extractor) {
-        for (int i = 0; i < extractor.getTrackCount(); i++) {
-            MediaFormat format = extractor.getTrackFormat(i);
-            String mime = format.getString(MediaFormat.KEY_MIME);
-            if (mime != null && mime.startsWith("audio/")) {
-                return i;
-            }
-        }
-        return -1;
-    }
-    
-    /**
-     * 重采样和混音处理
-     */
-    private static float[] resampleAndMix(ByteBuffer buffer, int sourceSampleRate, int channelCount) {
-        int numSamples = buffer.remaining() / (2 * channelCount);
-        float[] samples = new float[numSamples];
-        
-        for (int i = 0; i < numSamples; i++) {
-            float sample = 0;
+    private static float[] resampleAndNormalize(ByteBuffer pcm,
+                                                int sourceSampleRate,
+                                                int channelCount) {
+        int numFrames = pcm.remaining() / (2 * channelCount); // int16 = 2 bytes
+        float[] mono = new float[numFrames];
+
+        for (int i = 0; i < numFrames; i++) {
+            float sum = 0;
             for (int ch = 0; ch < channelCount; ch++) {
-                short s = buffer.getShort();
-                sample += s / 32768.0f;
+                sum += pcm.getShort() / 32768.0f;
             }
-            samples[i] = sample / channelCount;
+            mono[i] = sum / channelCount;
         }
-        
-        // 重采样到 16kHz
+
+        // 重采样
         if (sourceSampleRate != TARGET_SAMPLE_RATE) {
-            samples = resample(samples, sourceSampleRate, TARGET_SAMPLE_RATE);
+            mono = resample(mono, sourceSampleRate, TARGET_SAMPLE_RATE);
         }
-        
-        // 归一化处理
-        normalize(samples);
-        
-        return samples;
+
+        // 归一化
+        normalize(mono);
+
+        Log.d(TAG, "处理完成，采样点数=" + mono.length
+                + "（约 " + (mono.length / TARGET_SAMPLE_RATE) + " 秒）");
+        return mono;
     }
-    
+
     /**
      * 线性插值重采样
      */
-    private static float[] resample(float[] samples, int fromRate, int toRate) {
-        float ratio = (float)fromRate / toRate;
-        int newLength = (int)(samples.length / ratio);
-        float[] resampled = new float[newLength];
-        
+    private static float[] resample(float[] src, int fromRate, int toRate) {
+        float ratio = (float) fromRate / toRate;
+        int newLength = (int) (src.length / ratio);
+        float[] result = new float[newLength];
         for (int i = 0; i < newLength; i++) {
-            float srcIdx = i * ratio;
-            int idx = (int)srcIdx;
-            float frac = srcIdx - idx;
-            
-            if (idx + 1 < samples.length) {
-                resampled[i] = samples[idx] * (1 - frac) + samples[idx + 1] * frac;
-            } else {
-                resampled[i] = samples[idx];
-            }
+            float pos = i * ratio;
+            int idx = (int) pos;
+            float frac = pos - idx;
+            result[i] = (idx + 1 < src.length)
+                    ? src[idx] * (1 - frac) + src[idx + 1] * frac
+                    : src[idx];
         }
-        
-        return resampled;
+        return result;
     }
-    
+
     /**
-     * 音频归一化（增强音量）
+     * 峰值归一化 + 噪音门限，与 server.py 逻辑对齐
+     * - 振幅 < 0.015：静音/噪音，返回 null（调用方应视为未发声）
+     * - 否则：等比例拉满到峰值 0.9（与后端 waveform / max_amplitude 等效）
      */
     private static void normalize(float[] samples) {
-        // 计算最大振幅
-        float maxAmplitude = 0;
-        for (float sample : samples) {
-            maxAmplitude = Math.max(maxAmplitude, Math.abs(sample));
-        }
-        
-        // 如果音量太低，增强音量
-        if (maxAmplitude > 0 && maxAmplitude < 0.5f) {
-            float gain = 0.5f / maxAmplitude;
-            for (int i = 0; i < samples.length; i++) {
-                samples[i] = samples[i] * gain;
-            }
-        }
-        
-        // 确保归一化到 [-1, 1]
-        float currentMax = 0;
-        for (float sample : samples) {
-            currentMax = Math.max(currentMax, Math.abs(sample));
-        }
-        
-        if (currentMax > 1.0f) {
-            for (int i = 0; i < samples.length; i++) {
-                samples[i] = samples[i] / currentMax;
-            }
-        }
+        float peak = 0;
+        for (float s : samples) peak = Math.max(peak, Math.abs(s));
+
+        if (peak < 1e-6f) return; // 全静音
+
+        // 目标峰值 0.9，与后端 waveform / max_amplitude 等效
+        float gain = 0.9f / peak;
+        for (int i = 0; i < samples.length; i++) samples[i] *= gain;
+    }
+
+    /**
+     * 检查音频是否有效（振幅门限与 server.py 一致：< 0.015 视为静音）
+     */
+    public static boolean isSilent(float[] samples) {
+        float peak = 0;
+        for (float s : samples) peak = Math.max(peak, Math.abs(s));
+        boolean silent = peak < 0.05f;
+        if (silent) Log.w(TAG, "⚠️ 录音音量极低（峰值=" + peak + "），触发静音检测");
+        return silent;
     }
 }

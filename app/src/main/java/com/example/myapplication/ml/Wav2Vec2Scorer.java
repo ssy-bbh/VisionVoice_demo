@@ -2,394 +2,227 @@ package com.example.myapplication.ml;
 
 import android.content.Context;
 import android.util.Log;
-
 import ai.onnxruntime.OnnxTensor;
 import ai.onnxruntime.OrtEnvironment;
-import ai.onnxruntime.OrtException;
 import ai.onnxruntime.OrtSession;
-
-import java.io.BufferedReader;
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.InputStreamReader;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.nio.FloatBuffer;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
-/**
- * Wav2Vec2 端侧发音评分器
- * 
- * 使用 ONNX Runtime Mobile 在 Android 设备上运行 Wav2Vec2 模型
- * 实现离线发音评估，无需联网
- * 
- * @author VisionVoice Team
- * @version 1.0
- */
 public class Wav2Vec2Scorer {
     private static final String TAG = "Wav2Vec2Scorer";
-    private static final int SAMPLE_RATE = 16000;
-    
     private final OrtEnvironment env;
     private final OrtSession session;
-    private final Map<String, Integer> phonemeToId;
     private final Map<Integer, String> idToPhoneme;
-    
-    /**
-     * 构造函数 - 加载 ONNX 模型
-     * 
-     * @param context Android 上下文
-     * @throws RuntimeException 如果模型加载失败
-     */
+
     public Wav2Vec2Scorer(Context context) {
         try {
             env = OrtEnvironment.getEnvironment();
-
-            String modelAssetPath = "onnx/model_quant.onnx";
-            if (!fileExistsInAssets(context, modelAssetPath)) {
-                modelAssetPath = "onnx/model.onnx";
-            }
-
-            Log.i(TAG, "📦 加载模型：" + modelAssetPath);
-
-            // 复制到内部存储，用文件路径加载（避免 OOM）
-            java.io.File modelFile = new java.io.File(context.getFilesDir(), "wav2vec2_model.onnx");
-            if (!modelFile.exists()) {
-                Log.i(TAG, "首次运行，复制模型到内部存储...");
-                copyAssetToFile(context, modelAssetPath, modelFile);
-            }
-
+            String modelAssetPath = fileExistsInAssets(context, "onnx/model_quant.onnx") ? "onnx/model_quant.onnx" : "onnx/model.onnx";
+            File modelFile = new File(context.getFilesDir(), "wav2vec2_model.onnx");
+            copyAssetToFile(context, modelAssetPath, modelFile);
             session = env.createSession(modelFile.getAbsolutePath(), new OrtSession.SessionOptions());
-
-            Log.i(TAG, "✅ Wav2Vec2 模型加载成功");
-            Log.i(TAG, "输入节点：" + session.getInputNames());
-            Log.i(TAG, "输出节点：" + session.getOutputNames());
-
-            phonemeToId = new HashMap<>();
-            idToPhoneme = new HashMap<>();
-            loadPhonemeDictionary();
-
-        } catch (Exception e) {
-            Log.e(TAG, "❌ 模型加载失败", e);
-            throw new RuntimeException("Wav2Vec2 模型初始化失败：" + e.getMessage(), e);
-        }
+            idToPhoneme = buildIdToPhonemeMap();
+        } catch (Exception e) { throw new RuntimeException(e); }
     }
 
-    private void copyAssetToFile(Context context, String assetPath, java.io.File destFile) throws IOException {
-        InputStream is = context.getAssets().open(assetPath);
-        java.io.FileOutputStream fos = new java.io.FileOutputStream(destFile);
-        byte[] chunk = new byte[8192];
-        int bytesRead;
-        while ((bytesRead = is.read(chunk)) != -1) {
-            fos.write(chunk, 0, bytesRead);
-        }
-        fos.close();
-        is.close();
-    }
-    
-    private boolean fileExistsInAssets(Context context, String path) {
-        try {
-            context.getAssets().open(path).close();
-            return true;
-        } catch (IOException e) {
-            return false;
-        }
-    }
-    
-    /**
-     * 读取 assets 文件为 byte[]
-     * 使用 ByteArrayOutputStream 循环读取，避免压缩文件 available() 不准确的问题
-     */
-    private byte[] readAssetToBytes(Context context, String path) throws IOException {
-        InputStream is = context.getAssets().open(path);
-        java.io.ByteArrayOutputStream buffer = new java.io.ByteArrayOutputStream();
-        byte[] chunk = new byte[4096];
-        int bytesRead;
-        while ((bytesRead = is.read(chunk)) != -1) {
-            buffer.write(chunk, 0, bytesRead);
-        }
-        is.close();
-        return buffer.toByteArray();
-    }
-    
-    /**
-     * 加载音素词典
-     * 实际应该从模型配置文件加载，这里先硬编码常见英语音素
-     */
-    private void loadPhonemeDictionary() {
-        // IPA 音素表（英语）
-        String[] vowels = {
-            "ɪ", "i", "e", "ɛ", "æ", "ɑ", "ɔ", "ʊ", "u", "ʌ", "ə",
-            "eɪ", "aɪ", "ɔɪ", "aʊ", "oʊ", "ɪr", "ɛr", "ɔr", "ʊr", "ɑr"
-        };
-        
-        String[] consonants = {
-            "p", "b", "t", "d", "k", "g", "f", "v", "θ", "ð",
-            "s", "z", "ʃ", "ʒ", "h", "m", "n", "ŋ", "l", "ɹ", "w", "j",
-            "tʃ", "dʒ", "tr", "dr", "ts", "dz"
-        };
-        
-        int id = 1; // 0 保留给 blank
-        for (String p : vowels) {
-            phonemeToId.put(p, id);
-            idToPhoneme.put(id, p);
-            id++;
-        }
-        for (String p : consonants) {
-            phonemeToId.put(p, id);
-            idToPhoneme.put(id, p);
-            id++;
-        }
-        
-        Log.i(TAG, "✅ 加载音素词典：" + phonemeToId.size() + " 个音素");
-    }
-    
-    /**
-     * 转录音频为音素序列
-     * 
-     * @param audioData PCM 音频数据 (16kHz, float32, 归一化到 [-1, 1])
-     * @return 音素序列
-     */
-    public List<String> transcribe(float[] audioData) {
-        try {
-            // 1. 创建输入张量
-            long[] shape = {1, audioData.length};
-            FloatBuffer buffer = FloatBuffer.wrap(audioData);
-            OnnxTensor inputTensor = OnnxTensor.createTensor(env, buffer, shape);
-            
-            // 2. 运行推理
-            Map<String, OnnxTensor> inputs = new HashMap<>();
-            inputs.put("input_values", inputTensor);
-            
-            OrtSession.Result result = session.run(inputs);
-            
-            // 3. 获取输出 logits
-            float[][][] logits = (float[][][]) result.get(0).getValue();
-            
-            // 4. CTC 解码（贪婪搜索）
-            List<Integer> predictedIds = ctcGreedyDecode(logits[0]);
-            
-            // 5. ID 转音素
-            List<String> phonemes = new ArrayList<>();
-            for (int id : predictedIds) {
-                String phoneme = idToPhoneme.getOrDefault(id, "?");
-                phonemes.add(phoneme);
-            }
-            
-            // 清理资源
-            inputTensor.close();
-            result.close();
-            
-            Log.d(TAG, "✅ 转录完成：" + phonemes.size() + " 个音素");
-            return phonemes;
-            
-        } catch (OrtException e) {
-            Log.e(TAG, "❌ 推理失败", e);
-            return new ArrayList<>();
-        }
-    }
-    
-    /**
-     * CTC 贪婪搜索解码
-     * 
-     * @param logits 模型输出的 logits (time_steps x vocab_size)
-     * @return 解码后的音素 ID 序列
-     */
-    private List<Integer> ctcGreedyDecode(float[][] logits) {
-        List<Integer> result = new ArrayList<>();
-        int prevId = -1;
-        
-        for (float[] frame : logits) {
-            int maxId = argmax(frame);
-            
-            // 跳过 blank (id=0) 和重复
-            if (maxId != prevId && maxId != 0) {
-                result.add(maxId);
-            }
-            
-            prevId = maxId;
-        }
-        
-        return result;
-    }
-    
-    /**
-     * 求数组最大值的索引
-     */
-    private int argmax(float[] array) {
-        int maxIdx = 0;
-        float maxVal = array[0];
-        for (int i = 1; i < array.length; i++) {
-            if (array[i] > maxVal) {
-                maxVal = array[i];
-                maxIdx = i;
-            }
-        }
-        return maxIdx;
-    }
-    
-    /**
-     * 计算发音评分
-     * 
-     * @param targetWord 目标单词
-     * @param audioData 音频数据
-     * @return 评分结果
-     */
-    public PronunciationScore score(String targetWord, float[] audioData) {
-        long startTime = System.currentTimeMillis();
-        
-        // 1. 转录用户发音
+    public PronunciationScore score(String refPhonemeStr, float[] audioData) {
         List<String> userPhonemes = transcribe(audioData);
-        
-        // 2. 获取标准音素（简化实现，应该调用 phonemizer）
-        List<String> refPhonemes = getReferencePhonemes(targetWord);
-        
-        // 3. 对齐和评分
-        AlignmentResult alignment = alignPhonemes(refPhonemes, userPhonemes);
-        
-        // 4. 计算分数
+        List<String> refPhonemes = splitPhonemeString(refPhonemeStr);
+        AlignmentResult alignment = needlemanWunsch(refPhonemes, userPhonemes);
         int score = calculateScore(alignment);
-        
-        long endTime = System.currentTimeMillis();
-        Log.i(TAG, "⏱️ 评分耗时：" + (endTime - startTime) + "ms");
-        Log.i(TAG, "📊 得分：" + score);
-        
-        return new PronunciationScore(
-            score,
-            refPhonemes,
-            userPhonemes,
-            alignment.feedback
-        );
+
+        List<String> ipaRef = new ArrayList<>();
+        List<String> ipaUser = new ArrayList<>();
+        for (String p : alignment.reference) ipaRef.add(toStandardIPA(p));
+        for (String p : alignment.user) ipaUser.add(toStandardIPA(p));
+
+        return new PronunciationScore(score, ipaRef, ipaUser, alignment.feedback);
     }
-    
-    /**
-     * 获取单词的标准音素（简化版）
-     * TODO: 集成 phonemizer 或 CMU Dict
-     */
-    private List<String> getReferencePhonemes(String word) {
-        // 简化实现：返回占位符
-        // 实际应该使用 CMU Pronouncing Dictionary 或 phonemizer
-        List<String> phonemes = new ArrayList<>();
-        
-        // 临时硬编码一些常见单词
-        Map<String, String[]> commonWords = new HashMap<>();
-        commonWords.put("apple", new String[]{"æ", "p", "ə", "l"});
-        commonWords.put("book", new String[]{"b", "ʊ", "k"});
-        commonWords.put("cat", new String[]{"k", "æ", "t"});
-        commonWords.put("dog", new String[]{"d", "ɔ", "g"});
-        
-        String[] ref = commonWords.get(word.toLowerCase());
-        if (ref != null) {
-            for (String p : ref) {
-                phonemes.add(p);
-            }
-        } else {
-            // 未知单词：每个字母当作一个音素（临时方案）
-            for (char c : word.toCharArray()) {
-                phonemes.add(String.valueOf(c));
-            }
-        }
-        
-        return phonemes;
-    }
-    
-    /**
-     * 音素对齐（Needleman-Wunsch 算法简化版）
-     */
-    private AlignmentResult alignPhonemes(List<String> ref, List<String> user) {
-        List<String> feedback = new ArrayList<>();
-        
-        int n = ref.size();
-        int m = user.size();
-        
-        // 简化对齐：直接比较
-        int maxLen = Math.max(n, m);
-        for (int i = 0; i < maxLen; i++) {
-            String r = i < n ? ref.get(i) : "-";
-            String u = i < m ? user.get(i) : "-";
-            
-            if (r.equals(u)) {
-                feedback.add("Match");
-            } else if (r.equals("-")) {
-                feedback.add("Insertion (多读)");
-            } else if (u.equals("-")) {
-                feedback.add("Deletion (漏读)");
-            } else {
-                feedback.add("Substitution (错读)");
-            }
-        }
-        
-        return new AlignmentResult(ref, user, feedback);
-    }
-    
-    /**
-     * 计算最终得分
-     */
-    private int calculateScore(AlignmentResult alignment) {
-        int matchCount = 0;
-        int totalCount = alignment.reference.size();
-        
-        for (String fb : alignment.feedback) {
-            if (fb.equals("Match")) {
-                matchCount++;
-            }
-        }
-        
-        if (totalCount == 0) return 0;
-        
-        float accuracy = (float)matchCount / totalCount;
-        
-        // 非线性打分曲线
-        int displayScore;
-        if (accuracy >= 0.8f) {
-            displayScore = (int)(90 + (accuracy - 0.8f) * 50);
-        } else if (accuracy >= 0.5f) {
-            displayScore = (int)(60 + (accuracy - 0.5f) * 100);
-        } else {
-            displayScore = (int)(accuracy * 120);
-        }
-        
-        return Math.max(0, Math.min(100, displayScore));
-    }
-    
-    /**
-     * 释放资源
-     */
-    public void close() {
+
+    private List<String> transcribe(float[] audioData) {
         try {
-            session.close();
-            env.close();
-        } catch (OrtException e) {
-            Log.e(TAG, "❌ 关闭失败", e);
+            float maxAmp = 0.0001f;
+            for (float d : audioData) maxAmp = Math.max(maxAmp, Math.abs(d));
+            if (maxAmp < 0.015f) return new ArrayList<>();
+
+            long[] shape = {1, audioData.length};
+            FloatBuffer buffer = ByteBuffer.allocateDirect(audioData.length * 4).order(ByteOrder.nativeOrder()).asFloatBuffer();
+            for (float d : audioData) buffer.put(d / maxAmp);
+            buffer.rewind();
+
+            OnnxTensor inputTensor = OnnxTensor.createTensor(env, buffer, shape);
+            OrtSession.Result result = session.run(Collections.singletonMap("input_values", inputTensor));
+            float[][][] logits = (float[][][]) result.get(0).getValue();
+
+            List<String> phonemes = new ArrayList<>();
+            int prev = -1;
+            for (float[] frame : logits[0]) {
+                int maxId = 0;
+                for (int i = 1; i < frame.length; i++) if (frame[i] > frame[maxId]) maxId = i;
+                if (maxId != prev && maxId != 0 && idToPhoneme.containsKey(maxId)) {
+                    String p = idToPhoneme.get(maxId);
+                    if (!p.equals("h#") && !p.equals("spn") && !p.equals("[UNK]") && !p.contains("<")) {
+                        phonemes.add(p);
+                    }
+                }
+                prev = maxId;
+            }
+            inputTensor.close(); result.close();
+            return phonemes;
+        } catch (Exception e) { return new ArrayList<>(); }
+    }
+
+    // ================= 【真·修复：底层万能翻译器】 =================
+    private String normalizeForCompare(String p) {
+        if (p == null || p.equals("-")) return "-";
+        String s = p.toLowerCase().replaceAll("\\d", "").trim();
+
+        // 强制把所有传进来的 IPA 符号，翻译回模型认识的 Arpabet
+        Map<String, String> ipaToArpabet = new HashMap<String, String>() {{
+            put("ɑ", "aa"); put("æ", "ae"); put("ʌ", "ah"); put("aʊ", "aw"); put("aɪ", "ay");
+            put("tʃ", "ch"); put("ð", "dh"); put("ɛ", "eh"); put("ɝ", "er"); put("eɪ", "ey");
+            put("ɪ", "ih"); put("i", "iy"); put("dʒ", "jh"); put("ŋ", "ng"); put("oʊ", "ow");
+            put("ɔɪ", "oy"); put("ʃ", "sh"); put("θ", "th"); put("ʊ", "uh"); put("u", "uw");
+            put("ʒ", "zh"); put("ɹ", "r"); put("ɔ", "ao"); put("h", "hh"); put("j", "y");
+        }};
+
+        return ipaToArpabet.containsKey(s) ? ipaToArpabet.get(s) : s;
+    }
+
+    private String toStandardIPA(String p) {
+        if (p == null || p.equals("-")) return "-";
+        // 翻译前先过一遍底层，确保符号干净
+        String s = normalizeForCompare(p);
+        Map<String, String> m = new HashMap<String, String>() {{
+            put("aa", "ɑ"); put("ae", "æ"); put("ah", "ʌ"); put("aw", "aʊ"); put("ay", "aɪ");
+            put("ch", "tʃ"); put("dh", "ð"); put("eh", "ɛ"); put("er", "ɝ"); put("ey", "eɪ");
+            put("ih", "ɪ"); put("iy", "i"); put("jh", "dʒ"); put("ng", "ŋ"); put("ow", "oʊ");
+            put("oy", "ɔɪ"); put("sh", "ʃ"); put("th", "θ"); put("uh", "ʊ"); put("uw", "u");
+            put("zh", "ʒ"); put("hh", "h"); put("r", "ɹ"); put("ao", "ɔ"); put("y", "j");
+        }};
+        return m.containsKey(s) ? m.get(s) : s;
+    }
+
+    private String getErrorType(String ref, String user) {
+        String r = normalizeForCompare(ref);
+        String u = normalizeForCompare(user);
+        if (r.equals(u)) return "Match";
+
+        String[][] ignored = {
+                {"t","d"},{"d","t"},{"p","b"},{"b","p"},{"k","g"},{"g","k"},
+                {"v","b"},{"s","z"},{"z","s"},{"k","hh"}, {"k","h"}, {"p","hh"}, {"t","hh"},
+                {"iy","ih"}, {"ih","iy"}
+        };
+        for (String[] pair : ignored) if (pair[0].equals(r) && pair[1].equals(u)) return "Ignored";
+
+        Map<String, String> flaws = new HashMap<String, String>() {{
+            put("ae|eh", "开口度偏差"); put("v|w", "唇齿音混淆"); put("r|l", "r/l不分");
+            put("ao|aa", "圆唇不够"); put("aa|ao", "发音位置偏移");
+            put("ao|ah", "发音位置偏移"); put("ah|ao", "发音位置偏移");
+        }};
+        return flaws.containsKey(r+"|"+u) ? "Flaw:" + flaws.get(r+"|"+u) : "Substitution";
+    }
+
+    private AlignmentResult needlemanWunsch(List<String> ref, List<String> user) {
+        int n = ref.size(), m = user.size();
+        float[][] dp = new float[n + 1][m + 1];
+        // 【核心修改】：优化权重，Match > Flaw > GAP，确保算法优先对齐正确的音节
+        float MATCH = 1.0f, FLAW = 0.5f, MISMATCH = -1.0f, GAP = -1.0f;
+
+        for (int i = 0; i <= n; i++) dp[i][0] = i * GAP;
+        for (int j = 0; j <= m; j++) dp[0][j] = j * GAP;
+
+        for (int i = 1; i <= n; i++) {
+            for (int j = 1; j <= m; j++) {
+                String err = getErrorType(ref.get(i-1), user.get(j-1));
+                float s = (err.equals("Match") || err.equals("Ignored")) ? MATCH : (err.startsWith("Flaw:") ? FLAW : MISMATCH);
+                dp[i][j] = Math.max(dp[i-1][j-1] + s, Math.max(dp[i-1][j] + GAP, dp[i][j-1] + GAP));
+            }
+        }
+
+        List<String> aRef = new ArrayList<>(), aUser = new ArrayList<>(), fb = new ArrayList<>();
+        int i = n, j = m;
+        while (i > 0 || j > 0) {
+            if (i > 0 && j > 0) {
+                String err = getErrorType(ref.get(i-1), user.get(j-1));
+                float s = (err.equals("Match") || err.equals("Ignored")) ? MATCH : (err.startsWith("Flaw:") ? FLAW : MISMATCH);
+                if (dp[i][j] == dp[i-1][j-1] + s) {
+                    aRef.add(ref.get(i-1));
+                    aUser.add(err.equals("Ignored") ? ref.get(i-1) : user.get(j-1));
+                    fb.add(err.equals("Ignored") ? "Match" : err);
+                    i--; j--; continue;
+                }
+            }
+            if (i > 0 && dp[i][j] == dp[i-1][j] + GAP) {
+                aRef.add(ref.get(i-1)); aUser.add("-"); fb.add("Deletion"); i--;
+            } else {
+                aRef.add("-"); aUser.add(user.get(j-1)); fb.add("Insertion"); j--;
+            }
+        }
+        Collections.reverse(aRef); Collections.reverse(aUser); Collections.reverse(fb);
+        return new AlignmentResult(aRef, aUser, fb);
+    }
+
+    private int calculateScore(AlignmentResult a) {
+        float total = 0;
+        for (String f : a.feedback) {
+            if (f.equals("Match") || f.equals("Ignored")) total += 1.0f;
+            else if (f.startsWith("Flaw:")) total += 0.6f;
+        }
+        float acc = (a.reference.isEmpty()) ? 0 : total / a.reference.size();
+        int s = acc >= 0.8f ? (int)(90 + (acc - 0.8f) * 50) : acc >= 0.5f ? (int)(60 + (acc - 0.5f) * 100) : (int)(acc * 120);
+        return Math.max(0, Math.min(100, s));
+    }
+
+    private Map<Integer, String> buildIdToPhonemeMap() {
+        Map<Integer, String> map = new HashMap<>();
+        map.put(1, "aa"); map.put(2, "ae"); map.put(3, "ah"); map.put(4, "aw"); map.put(5, "ay");
+        map.put(6, "b"); map.put(7, "ch"); map.put(8, "d"); map.put(9, "dh"); map.put(10, "dx");
+        map.put(11, "eh"); map.put(12, "er"); map.put(13, "ey"); map.put(14, "f"); map.put(15, "g");
+        map.put(16, "h#"); map.put(17, "hh"); map.put(18, "ih"); map.put(19, "iy"); map.put(20, "jh");
+        map.put(21, "k"); map.put(22, "l"); map.put(23, "m"); map.put(24, "n"); map.put(25, "ng");
+        map.put(26, "ow"); map.put(27, "oy"); map.put(28, "p"); map.put(29, "r"); map.put(30, "s");
+        map.put(31, "sh"); map.put(32, "spn"); map.put(33, "t"); map.put(34, "th"); map.put(35, "uh");
+        map.put(36, "uw"); map.put(37, "v"); map.put(38, "w"); map.put(39, "y"); map.put(40, "z");
+        return map;
+    }
+
+    private List<String> splitPhonemeString(String s) {
+        s = s.toLowerCase().replaceAll("\\d", "").trim();
+        if (s.contains(" ")) return Arrays.asList(s.split("\\s+"));
+        return Arrays.asList(s.split("(?<=.)"));
+    }
+
+    private void copyAssetToFile(Context c, String a, File d) throws IOException {
+        try (InputStream is = c.getAssets().open(a); java.io.FileOutputStream os = new java.io.FileOutputStream(d)) {
+            byte[] b = new byte[8192]; int n;
+            while ((n = is.read(b)) != -1) os.write(b, 0, n);
         }
     }
-    
-    // ==================== 结果类 ====================
-    
+
+    private boolean fileExistsInAssets(Context c, String p) {
+        try { c.getAssets().open(p).close(); return true; } catch (IOException e) { return false; }
+    }
+
+    public void close() { try { session.close(); env.close(); } catch (Exception ignored) {} }
+
     public static class PronunciationScore {
-        public int score;
-        public List<String> referencePhonemes;
-        public List<String> userPhonemes;
-        public List<String> feedback;
-        
-        public PronunciationScore(int score, List<String> ref, List<String> user, List<String> feedback) {
-            this.score = score;
-            this.referencePhonemes = ref;
-            this.userPhonemes = user;
-            this.feedback = feedback;
+        public final int score;
+        public final List<String> referencePhonemes, userPhonemes, feedback;
+        public PronunciationScore(int s, List<String> r, List<String> u, List<String> f) {
+            this.score = s; this.referencePhonemes = r; this.userPhonemes = u; this.feedback = f;
         }
     }
-    
+
     public static class AlignmentResult {
-        public List<String> reference;
-        public List<String> user;
-        public List<String> feedback;
-        
-        public AlignmentResult(List<String> ref, List<String> user, List<String> feedback) {
-            this.reference = ref;
-            this.user = user;
-            this.feedback = feedback;
+        public final List<String> reference, user, feedback;
+        public AlignmentResult(List<String> r, List<String> u, List<String> f) {
+            this.reference = r; this.user = u; this.feedback = f;
         }
     }
 }

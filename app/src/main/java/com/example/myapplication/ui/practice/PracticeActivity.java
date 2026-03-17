@@ -5,10 +5,10 @@ import android.content.pm.PackageManager;
 import android.media.MediaRecorder;
 import android.os.Bundle;
 import android.speech.tts.TextToSpeech;
-import java.util.Locale;
 import android.util.Log;
 import android.view.View;
 import android.widget.LinearLayout;
+import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -18,6 +18,9 @@ import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
 import com.example.myapplication.R;
+import com.example.myapplication.ml.AudioProcessor;
+import com.example.myapplication.ml.PhonemeCache;
+import com.example.myapplication.ml.Wav2Vec2Scorer;
 import com.google.android.material.bottomsheet.BottomSheetBehavior;
 
 import org.json.JSONArray;
@@ -25,6 +28,8 @@ import org.json.JSONObject;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.List;
+import java.util.Locale;
 
 import okhttp3.Call;
 import okhttp3.Callback;
@@ -36,30 +41,35 @@ import okhttp3.RequestBody;
 import okhttp3.Response;
 
 public class PracticeActivity extends AppCompatActivity {
-    // 【新增】：TTS 引擎对象
-    private TextToSpeech textToSpeech;
+
     private static final String TAG = "PracticeActivity";
     private static final int REQUEST_RECORD_AUDIO_PERMISSION = 200;
-
-    // 【请注意】这里修改为你运行 Python FastAPI 的电脑的局域网 IP
-    // 如果是用 Android Studio 模拟器访问本机后端，通常是 10.0.2.2
-    // private static final String SERVER_URL = "http://10.0.2.2:8000/evaluate_pronunciation/";
-    // 方案一专属地址
     private static final String SERVER_URL = "http://127.0.0.1:8000/evaluate_pronunciation/";
+
+    // ===== 视图 =====
+    private TextToSpeech textToSpeech;
     private BottomSheetBehavior<View> bottomSheetBehavior;
     private View rippleView;
     private TextView tvWord;
-    private LinearLayout llPhonemeContainer;
     private TextView tvScore;
+    private TextView tvModeLabel;
+    private LinearLayout llPhonemeContainer;
+    private Switch switchOffline;
 
+    // ===== 录音 =====
     private boolean isRecording = false;
     private String targetWord;
-
-    // 录音相关
     private MediaRecorder mediaRecorder;
     private String audioFilePath;
 
-    // 网络请求相关
+    // ===== 端侧模型 =====
+    private Wav2Vec2Scorer wav2Vec2Scorer;
+    private PhonemeCache phonemeCache;
+    private boolean isOfflineMode = false;
+    private boolean isModelReady = false;
+    private String cachedPhonemeStr = null; // 当前单词的音素字符串
+
+    // ===== 网络 =====
     private final OkHttpClient client = new OkHttpClient();
 
     @Override
@@ -67,134 +77,279 @@ public class PracticeActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_practice);
 
-        // 1. 初始化视图
-        tvWord = findViewById(R.id.tvTargetWord);
-        rippleView = findViewById(R.id.viewRipple);
+        // 初始化视图
+        tvWord      = findViewById(R.id.tvTargetWord);
+        rippleView  = findViewById(R.id.viewRipple);
         llPhonemeContainer = findViewById(R.id.llPhonemeContainer);
-        tvScore = findViewById(R.id.tvScore);
+        tvScore     = findViewById(R.id.tvScore);
+        switchOffline = findViewById(R.id.switchOfflineMode);
+        tvModeLabel   = findViewById(R.id.tvModeLabel);
 
         View bottomSheet = findViewById(R.id.bottomSheetFeedback);
         bottomSheetBehavior = BottomSheetBehavior.from(bottomSheet);
-        bottomSheetBehavior.setState(BottomSheetBehavior.STATE_HIDDEN); // 默认隐藏
+        bottomSheetBehavior.setState(BottomSheetBehavior.STATE_HIDDEN);
 
-        // 2. 获取从识别界面传来的单词
+        // 初始化音素缓存
+        phonemeCache = new PhonemeCache(this);
+
+        // 获取目标单词
         targetWord = getIntent().getStringExtra("extra_word");
-        if (targetWord == null) targetWord = "apple"; // 默认兜底
+        if (targetWord == null) targetWord = "apple";
         tvWord.setText(targetWord);
-        // 【新增】：一进页面，立刻把占位符改成“加载中”，并发起请求
+
+        // 获取音标：PhonemeCache.get() 已整合运行时缓存 + CMU Dict，直接调用
         TextView tvPhonetic = findViewById(R.id.tvPhonetic);
-        tvPhonetic.setText("加载中...");
-        fetchPhonetics(targetWord);
-        // 【新增 1】：初始化 TTS 引擎，并设置为美式英语
+        String phonemes = phonemeCache.get(targetWord);
+        if (phonemes != null) {
+            cachedPhonemeStr = phonemes;
+            tvPhonetic.setText("/" + phonemes + "/");
+            Log.d(TAG, "音素命中：" + targetWord + " → " + phonemes);
+        } else {
+            tvPhonetic.setText("加载中...");
+        }
+        fetchPhonetics(targetWord); // 后台请求后端，更新为 phonemizer 结果并写入缓存
+
+        // TTS
         textToSpeech = new TextToSpeech(this, status -> {
             if (status == TextToSpeech.SUCCESS) {
-                // 设置语言为美式英语 (US)
                 int result = textToSpeech.setLanguage(Locale.US);
                 if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
-                    Log.e(TAG, "TTS不支持该语言或缺少语言包");
+                    Log.e(TAG, "TTS 不支持该语言");
                 }
-            } else {
-                Log.e(TAG, "TTS初始化失败");
             }
         });
-
-        // 【新增 2】：绑定喇叭按钮的点击事件
         findViewById(R.id.btnTTS).setOnClickListener(v -> {
             if (targetWord != null && !targetWord.isEmpty()) {
-                // QUEUE_FLUSH 意味着如果用户疯狂连按，会打断之前的发音立刻读最新的
                 textToSpeech.speak(targetWord, TextToSpeech.QUEUE_FLUSH, null, null);
-
-                // 加个小动画让按钮有反馈感 (可选)
-                v.animate().scaleX(1.2f).scaleY(1.2f).setDuration(100).withEndAction(() -> {
-                    v.animate().scaleX(1.0f).scaleY(1.0f).setDuration(100).start();
-                }).start();
+                v.animate().scaleX(1.2f).scaleY(1.2f).setDuration(100)
+                        .withEndAction(() -> v.animate().scaleX(1f).scaleY(1f).setDuration(100).start()).start();
             }
         });
-        // 3. 设置录音文件保存路径 (存在 App 的内部缓存目录中)
+
+        // 录音路径
         audioFilePath = getExternalCacheDir().getAbsolutePath() + "/user_record.m4a";
 
-        // 4. 按钮点击事件
+        // 按钮
         findViewById(R.id.btnRecord).setOnClickListener(v -> handleRecordClick());
         findViewById(R.id.btnNextObject).setOnClickListener(v -> finish());
         findViewById(R.id.btnClosePractice).setOnClickListener(v -> finish());
+
+        // ===== 离线模式开关 =====
+        // ===== 离线模式开关 =====
+        // 初始禁用，模型就绪后才能拨动
+        switchOffline.setEnabled(false);
+        switchOffline.setChecked(false);
+        updateModeLabel(false);
+        switchOffline.setOnCheckedChangeListener((btn, isChecked) -> {
+            isOfflineMode = isChecked;
+            updateModeLabel(isChecked);
+        });
+
+        // 后台预加载模型，加载完成才解锁开关
+        preloadModelAsync();
     }
 
-    /**
-     * 处理录音按钮点击逻辑
-     */
+    // ===== 离线模式 UI =====
+
+    private void updateModeLabel(boolean offline) {
+        if (tvModeLabel == null) return;
+        if (offline) {
+            tvModeLabel.setText("🔒 离线模式");
+            tvModeLabel.setTextColor(ContextCompat.getColor(this, R.color.success_green));
+        } else {
+            tvModeLabel.setText("☁️ 在线模式");
+            tvModeLabel.setTextColor(ContextCompat.getColor(this, R.color.brand_blue));
+        }
+    }
+
+    // ===== 模型加载 =====
+
+    /** 后台静默预加载，不影响 UI */
+    private void preloadModelAsync() {
+        new Thread(() -> {
+            try {
+                Log.i(TAG, "后台预加载 Wav2Vec2 模型...");
+                runOnUiThread(() -> {
+                    tvModeLabel.setText("☁️ 在线模式（加载中...）");
+                    tvModeLabel.setTextColor(ContextCompat.getColor(this, R.color.text_secondary));
+                });
+
+                wav2Vec2Scorer = new Wav2Vec2Scorer(this);
+                isModelReady = true;
+
+                Log.i(TAG, "✅ 模型预加载完成");
+                runOnUiThread(() -> {
+                    switchOffline.setEnabled(true);  // ✅ 解锁开关
+                    tvModeLabel.setText("☁️ 在线模式（离线可用）");
+                    tvModeLabel.setTextColor(ContextCompat.getColor(this, R.color.brand_blue));
+                    // 如果音标还是"加载中..."，说明后端也没返回，用缓存或占位符
+                    TextView tvPhonetic = findViewById(R.id.tvPhonetic);
+                    if ("加载中...".equals(tvPhonetic.getText().toString())) {
+                        // CMU Dict 后台加载完成后再查一次
+                        String p = phonemeCache.get(targetWord);
+                        if (p != null) {
+                            cachedPhonemeStr = p;
+                            tvPhonetic.setText("/" + p + "/");
+                        } else {
+                            tvPhonetic.setText("/.../");
+                        }
+                    }
+                });
+            } catch (Exception e) {
+                Log.e(TAG, "模型预加载失败", e);
+                runOnUiThread(() -> {
+                    switchOffline.setEnabled(false);  // 加载失败，保持禁用
+                    tvModeLabel.setText("☁️ 在线模式（离线不可用）");
+                    tvModeLabel.setTextColor(ContextCompat.getColor(this, R.color.error_red));
+                });
+            }
+        }).start();
+    }
+
+    // ===== 录音逻辑 =====
+
     private void handleRecordClick() {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.RECORD_AUDIO}, REQUEST_RECORD_AUDIO_PERMISSION);
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
+                != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this,
+                    new String[]{Manifest.permission.RECORD_AUDIO},
+                    REQUEST_RECORD_AUDIO_PERMISSION);
             return;
         }
-
         if (!isRecording) {
             startRecording();
         } else {
-            // 1. 状态立刻变更为停止，防止用户连点
             isRecording = false;
-
-            // 2. UI 立刻停止动画，给用户“已经按下了”的反馈
             rippleView.animate().cancel();
             rippleView.setVisibility(View.INVISIBLE);
             Toast.makeText(this, "正在评估发音...", Toast.LENGTH_SHORT).show();
-
-            // 3. 【核心修复】延迟 500 毫秒再去真正关闭麦克风，把空气中的尾音录完
-            new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(this::stopRecordingAndSend, 500);
+            new android.os.Handler(android.os.Looper.getMainLooper())
+                    .postDelayed(this::stopRecordingAndEvaluate, 500);
         }
     }
 
-    /**
-     * 1. 真实录音逻辑：开始录音
-     */
     private void startRecording() {
+        llPhonemeContainer.removeAllViews();
+        tvScore.setText("--%");
+        tvScore.setTextColor(ContextCompat.getColor(this, R.color.text_secondary));
         mediaRecorder = new MediaRecorder();
         mediaRecorder.setAudioSource(MediaRecorder.AudioSource.MIC);
-        // 使用 MPEG_4 格式，绝大多数 Python 后端配合 ffmpeg 都能直接读取
         mediaRecorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4);
         mediaRecorder.setOutputFile(audioFilePath);
         mediaRecorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC);
-
         try {
             mediaRecorder.prepare();
             mediaRecorder.start();
-
             isRecording = true;
-            // UI 动画
             rippleView.setVisibility(View.VISIBLE);
             rippleView.animate().scaleX(1.5f).scaleY(1.5f).setDuration(1000).withLayer().start();
             Toast.makeText(this, "正在录音，点击结束...", Toast.LENGTH_SHORT).show();
-
         } catch (IOException e) {
             Log.e(TAG, "录音准备失败", e);
             Toast.makeText(this, "录音设备启动失败", Toast.LENGTH_SHORT).show();
         }
     }
 
-    /**
-     * 2. 真实录音逻辑：停止录音并发送网络请求
-     */
-    private void stopRecordingAndSend() {
+    private void stopRecordingAndEvaluate() {
+        // 停止录音
         if (mediaRecorder != null) {
-            try {
-                mediaRecorder.stop();
-            } catch (RuntimeException stopException) {
-                // Ignore
-            }
+            try { mediaRecorder.stop(); } catch (RuntimeException ignored) {}
             mediaRecorder.release();
             mediaRecorder = null;
         }
 
-        // 开始发送给后端
         File audioFile = new File(audioFilePath);
-        evaluatePronunciation(targetWord, audioFile);
+
+        // 根据模式选择评估方式
+        if (isOfflineMode && isModelReady) {
+            evaluateOnDevice(targetWord, audioFile);
+        } else {
+            if (isOfflineMode && !isModelReady) {
+                Toast.makeText(this, "模型未就绪，已切换到在线模式", Toast.LENGTH_SHORT).show();
+                isOfflineMode = false;
+                runOnUiThread(() -> {
+                    switchOffline.setChecked(false);
+                    updateModeLabel(false);
+                });
+            }
+            evaluatePronunciation(targetWord, audioFile);
+        }
     }
 
-    /**
-     * 3. 真实网络逻辑：OkHttp 发送录音给 Python 后端
-     */
+    // ===== 端侧评估 =====
+
+    private void evaluateOnDevice(String word, File audioFile) {
+        new Thread(() -> {
+            try {
+                Log.i(TAG, "🔒 端侧评估开始：" + word);
+                long t0 = System.currentTimeMillis();
+
+                // 1. 加载音频
+                float[] audioData = AudioProcessor.loadAndPreprocess(audioFile);
+                Log.d(TAG, "音频加载完成：" + audioData.length + " 采样点");
+
+                // 2. 静音检测
+                if (AudioProcessor.isSilent(audioData)) {
+                    runOnUiThread(() ->
+                            Toast.makeText(this, "⚠️ 未检测到声音，请靠近麦克风重试", Toast.LENGTH_SHORT).show());
+                    return;
+                }
+
+                // 3. 标准音素：直接从 PhonemeCache 取（已整合运行时缓存 + CMU Dict）
+                String refPhonemes = phonemeCache.get(word);
+                if (refPhonemes == null || refPhonemes.isEmpty()) {
+                    runOnUiThread(() ->
+                            Toast.makeText(this, "⚠️ 该词音素未收录，请联网后重试", Toast.LENGTH_SHORT).show());
+                    return;
+                }
+                Log.d(TAG, "标准音素：" + refPhonemes);
+
+                // 4. 端侧评分（传入音素字符串）
+                Wav2Vec2Scorer.PronunciationScore result = wav2Vec2Scorer.score(refPhonemes, audioData);
+                long elapsed = System.currentTimeMillis() - t0;
+                Log.i(TAG, "✅ 端侧评估完成，得分=" + result.score + "，耗时=" + elapsed + "ms");
+
+                // 3. 转换为 UI 所需格式
+                JSONArray refArr  = new JSONArray();
+                JSONArray userArr = new JSONArray();
+                JSONArray fbArr   = new JSONArray();
+
+                int maxLen = Math.max(result.referencePhonemes.size(), result.userPhonemes.size());
+                List<String> refs  = result.referencePhonemes;
+                List<String> users = result.userPhonemes;
+                List<String> fbs   = result.feedback;
+
+                for (int i = 0; i < maxLen; i++) {
+                    refArr.put(i < refs.size()  ? refs.get(i)  : "-");
+                    userArr.put(i < users.size() ? users.get(i) : "-");
+                    fbArr.put(i < fbs.size()     ? fbs.get(i)   : "Deletion");
+                }
+
+                // 4. 更新 UI
+                runOnUiThread(() -> {
+                    updateUIWithFeedback(refArr, userArr, fbArr);
+                    bottomSheetBehavior.setState(BottomSheetBehavior.STATE_EXPANDED);
+                    // 用端侧计算的得分直接覆盖
+                    tvScore.setText(result.score + "%");
+                    colorScore(result.score);
+                });
+
+            } catch (Exception e) {
+                Log.e(TAG, "端侧评估失败", e);
+                runOnUiThread(() -> {
+                    Toast.makeText(this, "端侧评估失败，切换到在线模式重试", Toast.LENGTH_SHORT).show();
+                    isOfflineMode = false;
+                    switchOffline.setChecked(false);
+                    updateModeLabel(false);
+                    evaluatePronunciation(word, audioFile);
+                });
+            }
+        }).start();
+    }
+
+    // ===== 在线评估（原有逻辑，保持不变）=====
+
     private void evaluatePronunciation(String word, File file) {
-        // 构造表单数据，对应 Python FastAPI 的 target_word 和 audio_file
         RequestBody requestBody = new MultipartBody.Builder()
                 .setType(MultipartBody.FORM)
                 .addFormDataPart("target_word", word)
@@ -202,18 +357,15 @@ public class PracticeActivity extends AppCompatActivity {
                         RequestBody.create(MediaType.parse("audio/mp4"), file))
                 .build();
 
-        Request request = new Request.Builder()
-                .url(SERVER_URL)
-                .post(requestBody)
-                .build();
+        Request request = new Request.Builder().url(SERVER_URL).post(requestBody).build();
 
         client.newCall(request).enqueue(new Callback() {
             @Override
             public void onFailure(@NonNull Call call, @NonNull IOException e) {
                 Log.e(TAG, "网络请求失败", e);
-                runOnUiThread(() -> {
-                    Toast.makeText(PracticeActivity.this, "连接服务器失败，请检查网络和IP", Toast.LENGTH_SHORT).show();
-                });
+                runOnUiThread(() ->
+                        Toast.makeText(PracticeActivity.this,
+                                "连接服务器失败，请检查网络和 IP", Toast.LENGTH_SHORT).show());
             }
 
             @Override
@@ -221,65 +373,53 @@ public class PracticeActivity extends AppCompatActivity {
                 if (response.isSuccessful() && response.body() != null) {
                     try {
                         String responseData = response.body().string();
-                        // ====== 加上这一行，把后端发来的原始字符串打印出来 ======
-                        Log.d("VISION_DEBUG", "后端返回的完整JSON: " + responseData);
+                        Log.d(TAG, "后端返回：" + responseData);
                         JSONObject json = new JSONObject(responseData);
-
-                        // 按照你后端的返回格式提取数据
-                        JSONArray refPhonemes = json.getJSONArray("reference_phonemes");
+                        JSONArray refPhonemes  = json.getJSONArray("reference_phonemes");
                         JSONArray userPhonemes = json.getJSONArray("user_phonemes");
-                        JSONArray feedback = json.getJSONArray("feedback");
-
-                        // 必须切回主线程更新 UI
+                        JSONArray feedback     = json.getJSONArray("feedback");
                         runOnUiThread(() -> {
                             updateUIWithFeedback(refPhonemes, userPhonemes, feedback);
-                            // 数据准备好后，弹出底部面板
                             bottomSheetBehavior.setState(BottomSheetBehavior.STATE_EXPANDED);
                         });
-
                     } catch (Exception e) {
-                        Log.e(TAG, "JSON解析失败", e);
+                        Log.e(TAG, "JSON 解析失败", e);
                     }
                 } else {
-                    runOnUiThread(() -> Toast.makeText(PracticeActivity.this, "服务器错误: " + response.code(), Toast.LENGTH_SHORT).show());
+                    runOnUiThread(() ->
+                            Toast.makeText(PracticeActivity.this,
+                                    "服务器错误: " + response.code(), Toast.LENGTH_SHORT).show());
                 }
             }
         });
     }
 
-    /**
-     * 4. 真实渲染逻辑：根据 JSON 结果动态生成红绿音标块
-     */
-    /**
-     * 动态渲染上下对比的音标打分结果
-     */
+    // ===== UI 渲染（原有逻辑，保持不变）=====
+
     private void updateUIWithFeedback(JSONArray refPhonemes, JSONArray userPhonemes, JSONArray feedback) {
         LinearLayout llContainer = findViewById(R.id.llPhonemeContainer);
-        llContainer.removeAllViews(); // 清空旧数据
-
+        llContainer.removeAllViews();
         try {
-            // 【关键点】：在这里定义 totalScore，确保整个 try 块都能用到它
             float totalScore = 0f;
             int totalCount = refPhonemes.length();
             int validPhonemeCount = 0;
 
             for (int i = 0; i < totalCount; i++) {
-                String ref = refPhonemes.getString(i);
+                String ref  = refPhonemes.getString(i);
                 String user = userPhonemes.getString(i);
-                String fb = feedback.getString(i);
+                String fb   = feedback.getString(i);
 
                 if (!ref.equals("-")) validPhonemeCount++;
 
-                // 1. 创建上下两行的容器
                 LinearLayout pairLayout = new LinearLayout(this);
                 pairLayout.setOrientation(LinearLayout.VERTICAL);
                 pairLayout.setGravity(android.view.Gravity.CENTER);
                 LinearLayout.LayoutParams pairParams = new LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT);
                 pairParams.setMargins(0, 0, 16, 0);
                 pairLayout.setLayoutParams(pairParams);
 
-                // 2. 顶部的参考音标
                 TextView tvRef = new TextView(this);
                 tvRef.setText(ref.equals("-") ? " " : ref);
                 tvRef.setTextSize(16);
@@ -287,7 +427,6 @@ public class PracticeActivity extends AppCompatActivity {
                 tvRef.setGravity(android.view.Gravity.CENTER);
                 tvRef.setPadding(0, 0, 0, 4);
 
-                // 3. 底部的用户发音
                 TextView tvUser = new TextView(this);
                 tvUser.setText(user.equals("-") ? "×" : user);
                 tvUser.setTextSize(20);
@@ -295,68 +434,100 @@ public class PracticeActivity extends AppCompatActivity {
                 tvUser.setTypeface(null, android.graphics.Typeface.BOLD);
                 tvUser.setGravity(android.view.Gravity.CENTER);
 
-                // 4. 三级容错上色与加权计分
                 if (fb.equals("Match")) {
                     tvUser.setBackgroundResource(R.drawable.bg_phoneme_correct);
                     tvUser.setTextColor(ContextCompat.getColor(this, R.color.success_green));
-                    totalScore += 1.0f; // 完美，得 1 分
+                    totalScore += 1.0f;
                 } else if (fb.startsWith("Flaw:")) {
                     String[] parts = fb.split(":");
                     String reason = parts.length > 1 ? parts[1] : "发音有瑕疵";
-
                     tvUser.setBackgroundResource(R.drawable.bg_phoneme_warning);
                     tvUser.setTextColor(android.graphics.Color.parseColor("#F57C00"));
-                    totalScore += 0.6f; // 瑕疵，得 0.6 分
-
-                    // 点击弹出诊断原因
-                    tvUser.setOnClickListener(v -> android.widget.Toast.makeText(this, "AI诊断: " + reason, android.widget.Toast.LENGTH_SHORT).show());
+                    totalScore += 0.6f;
+                    tvUser.setOnClickListener(v ->
+                            Toast.makeText(this, "AI诊断: " + reason, Toast.LENGTH_SHORT).show());
                 } else {
                     tvUser.setBackgroundResource(R.drawable.bg_phoneme_error);
                     tvUser.setTextColor(ContextCompat.getColor(this, R.color.error_red));
-                    totalScore += 0f; // 错误，得 0 分
                 }
 
-                // 5. 拼装 UI
                 pairLayout.addView(tvRef);
                 pairLayout.addView(tvUser);
                 llContainer.addView(pairLayout);
             }
 
-            // 6. 核心业务逻辑：【非线性教育打分曲线】
             if (validPhonemeCount > 0) {
-                TextView tvScore = findViewById(R.id.tvScore);
-
-                // 计算底层原始正确率
                 float rawAccuracy = totalScore / totalCount;
-                int displayScore = 0;
-
-                // 曲线映射 (高分段放水，中分段保及格，低分段惩罚)
+                int displayScore;
                 if (rawAccuracy >= 0.8f) {
-                    displayScore = (int) (90 + (rawAccuracy - 0.8f) * 50);
+                    displayScore = (int)(90 + (rawAccuracy - 0.8f) * 50);
                 } else if (rawAccuracy >= 0.5f) {
-                    displayScore = (int) (60 + (rawAccuracy - 0.5f) * 100);
+                    displayScore = (int)(60 + (rawAccuracy - 0.5f) * 100);
                 } else {
-                    displayScore = (int) (rawAccuracy * 120);
+                    displayScore = (int)(rawAccuracy * 120);
                 }
-
-                // 兜底，限制在 0-100 之间
                 displayScore = Math.max(0, Math.min(100, displayScore));
                 tvScore.setText(displayScore + "%");
-
-                // 根据最终展示分数变色
-                if (displayScore >= 80) {
-                    tvScore.setTextColor(ContextCompat.getColor(this, R.color.success_green));
-                } else if (displayScore >= 60) {
-                    tvScore.setTextColor(android.graphics.Color.parseColor("#F57C00"));
-                } else {
-                    tvScore.setTextColor(ContextCompat.getColor(this, R.color.error_red));
-                }
+                colorScore(displayScore);
             }
-
         } catch (Exception e) {
-            android.util.Log.e("PracticeActivity", "UI更新异常", e);
+            Log.e(TAG, "UI 更新异常", e);
         }
     }
+
+    private void colorScore(int score) {
+        if (score >= 80) {
+            tvScore.setTextColor(ContextCompat.getColor(this, R.color.success_green));
+        } else if (score >= 60) {
+            tvScore.setTextColor(android.graphics.Color.parseColor("#F57C00"));
+        } else {
+            tvScore.setTextColor(ContextCompat.getColor(this, R.color.error_red));
+        }
+    }
+
+    // ===== 音标获取 =====
+
+    private void fetchPhonetics(String word) {
+        String url = "http://127.0.0.1:8000/get_phonetics/?word=" + word;
+        Request request = new Request.Builder().url(url).get().build();
+        client.newCall(request).enqueue(new Callback() {
+            @Override
+            public void onFailure(@NonNull Call call, @NonNull IOException e) {
+                runOnUiThread(() -> {
+                    TextView tvPhonetic = findViewById(R.id.tvPhonetic);
+                    if (cachedPhonemeStr != null) {
+                        // 已有缓存（本次进页面时命中），保持显示
+                        tvPhonetic.setText("/" + cachedPhonemeStr + "/");
+                    } else {
+                        // 完全没有缓存，显示占位符
+                        tvPhonetic.setText("/.../");
+                        Log.w(TAG, "后端不可用且无缓存：" + word);
+                    }
+                });
+            }
+            @Override
+            public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
+                if (response.isSuccessful() && response.body() != null) {
+                    try {
+                        JSONObject json = new JSONObject(response.body().string());
+                        String phonetics = json.getString("phonetics");
+                        // 去掉斜杠存入缓存和内存
+                        String phonemeStr = phonetics.replaceAll("^/|/$", "");
+                        cachedPhonemeStr = phonemeStr;
+                        phonemeCache.put(word, phonemeStr); // 写入本地缓存
+                        runOnUiThread(() -> {
+                            TextView tvPhonetic = findViewById(R.id.tvPhonetic);
+                            tvPhonetic.setText(phonetics);
+                        });
+                    } catch (Exception e) {
+                        Log.e(TAG, "解析音标 JSON 失败", e);
+                    }
+                }
+            }
+        });
+    }
+
+    // ===== 生命周期 =====
 
     @Override
     protected void onDestroy() {
@@ -369,47 +540,8 @@ public class PracticeActivity extends AppCompatActivity {
             mediaRecorder.release();
             mediaRecorder = null;
         }
-    }
-    /**
-     * 向 Python 后端请求该单词的标准音标
-     */
-    private void fetchPhonetics(String word) {
-        // 【注意】如果你用的是局域网热点或者 cpolar，记得把这里的 IP 换掉
-        String url = "http://127.0.0.1:8000/get_phonetics/?word=" + word;
-
-        Request request = new Request.Builder()
-                .url(url)
-                .get()
-                .build();
-
-        client.newCall(request).enqueue(new Callback() {
-            @Override
-            public void onFailure(@NonNull Call call, @NonNull IOException e) {
-                // 如果网络失败，给个占位符
-                runOnUiThread(() -> {
-                    TextView tvPhonetic = findViewById(R.id.tvPhonetic);
-                    tvPhonetic.setText("/.../");
-                });
-            }
-
-            @Override
-            public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
-                if (response.isSuccessful() && response.body() != null) {
-                    try {
-                        String responseData = response.body().string();
-                        JSONObject json = new JSONObject(responseData);
-                        String phonetics = json.getString("phonetics");
-
-                        // 成功拿到音标，切回主线程更新 UI
-                        runOnUiThread(() -> {
-                            TextView tvPhonetic = findViewById(R.id.tvPhonetic);
-                            tvPhonetic.setText(phonetics);
-                        });
-                    } catch (Exception e) {
-                        Log.e(TAG, "解析音标JSON失败", e);
-                    }
-                }
-            }
-        });
+        if (wav2Vec2Scorer != null) {
+            wav2Vec2Scorer.close();
+        }
     }
 }
