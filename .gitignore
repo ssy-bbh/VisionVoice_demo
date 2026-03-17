@@ -33,3 +33,11 @@ local.properties
 # --- 系统文件 ---
 .DS_Store
 Thumbs.db
+# ===== 模型文件（体积过大，不进 git）=====
+*.onnx
+
+# ===== IDE 配置 =====
+backend/.idea/
+
+# ===== 编译输出 =====
+out/

@@ -87,9 +87,11 @@ Android Studio 会自动同步 Gradle 依赖
 MyApplication/
 ├── app/                          # Android 主模块
 │   └── src/main/java/.../
-│       ├── ml/                   # ML 模块
-│       │   ├── ObjectRecognitionHelper.java
-│       │   └── Wav2Vec2Scorer.java
+│       ├── ml/                   # ML 模块 ⭐
+│       │   ├── ObjectRecognitionHelper.java  # YOLO 检测
+│       │   ├── Wav2Vec2Scorer.java           # 端侧评分
+│       │   ├── AudioProcessor.java           # 音频预处理
+│       │   └── README.md                     # ML 模块说明
 │       ├── ui/                   # UI 界面
 │       │   ├── home/
 │       │   ├── ar/

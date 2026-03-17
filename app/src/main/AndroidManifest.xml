@@ -44,6 +44,12 @@
             android:exported="false"
             android:theme="@style/Theme.Material3.DayNight.NoActionBar" />
 
+        <!-- ONNX Test Activity -->
+        <activity
+            android:name=".ui.test.OnnxTestActivity"
+            android:exported="false"
+            android:label="ONNX 模型测试" />
+
     </application>
 
 </manifest>

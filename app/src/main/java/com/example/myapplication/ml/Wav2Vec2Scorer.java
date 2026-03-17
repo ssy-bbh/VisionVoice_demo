@@ -1,7 +1,6 @@
 package com.example.myapplication.ml;
 
 import android.content.Context;
-import android.content.res.AssetFileDescriptor;
 import android.util.Log;
 
 import ai.onnxruntime.OnnxTensor;
@@ -11,6 +10,7 @@ import ai.onnxruntime.OrtSession;
 
 import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.FloatBuffer;
 import java.util.ArrayList;
@@ -45,40 +45,72 @@ public class Wav2Vec2Scorer {
     public Wav2Vec2Scorer(Context context) {
         try {
             env = OrtEnvironment.getEnvironment();
-            
-            // 尝试加载量化模型（更小更快）
-            String modelPath = "onnx/model_quant.onnx";
-            if (!fileExistsInAssets(context, modelPath)) {
-                modelPath = "onnx/model.onnx";
+
+            String modelAssetPath = "onnx/model_quant.onnx";
+            if (!fileExistsInAssets(context, modelAssetPath)) {
+                modelAssetPath = "onnx/model.onnx";
             }
-            
-            Log.i(TAG, "📦 加载模型：" + modelPath);
-            AssetFileDescriptor modelFd = context.getAssets().openFd(modelPath);
-            session = env.createSession(modelFd.getFileDescriptor(), new OrtSession.SessionOptions());
-            modelFd.close();
-            
+
+            Log.i(TAG, "📦 加载模型：" + modelAssetPath);
+
+            // 复制到内部存储，用文件路径加载（避免 OOM）
+            java.io.File modelFile = new java.io.File(context.getFilesDir(), "wav2vec2_model.onnx");
+            if (!modelFile.exists()) {
+                Log.i(TAG, "首次运行，复制模型到内部存储...");
+                copyAssetToFile(context, modelAssetPath, modelFile);
+            }
+
+            session = env.createSession(modelFile.getAbsolutePath(), new OrtSession.SessionOptions());
+
             Log.i(TAG, "✅ Wav2Vec2 模型加载成功");
             Log.i(TAG, "输入节点：" + session.getInputNames());
             Log.i(TAG, "输出节点：" + session.getOutputNames());
-            
-            // 初始化音素词典
+
             phonemeToId = new HashMap<>();
             idToPhoneme = new HashMap<>();
             loadPhonemeDictionary();
-            
+
         } catch (Exception e) {
             Log.e(TAG, "❌ 模型加载失败", e);
             throw new RuntimeException("Wav2Vec2 模型初始化失败：" + e.getMessage(), e);
         }
     }
+
+    private void copyAssetToFile(Context context, String assetPath, java.io.File destFile) throws IOException {
+        InputStream is = context.getAssets().open(assetPath);
+        java.io.FileOutputStream fos = new java.io.FileOutputStream(destFile);
+        byte[] chunk = new byte[8192];
+        int bytesRead;
+        while ((bytesRead = is.read(chunk)) != -1) {
+            fos.write(chunk, 0, bytesRead);
+        }
+        fos.close();
+        is.close();
+    }
     
     private boolean fileExistsInAssets(Context context, String path) {
         try {
-            context.getAssets().openFd(path).close();
+            context.getAssets().open(path).close();
             return true;
         } catch (IOException e) {
             return false;
         }
+    }
+    
+    /**
+     * 读取 assets 文件为 byte[]
+     * 使用 ByteArrayOutputStream 循环读取，避免压缩文件 available() 不准确的问题
+     */
+    private byte[] readAssetToBytes(Context context, String path) throws IOException {
+        InputStream is = context.getAssets().open(path);
+        java.io.ByteArrayOutputStream buffer = new java.io.ByteArrayOutputStream();
+        byte[] chunk = new byte[4096];
+        int bytesRead;
+        while ((bytesRead = is.read(chunk)) != -1) {
+            buffer.write(chunk, 0, bytesRead);
+        }
+        is.close();
+        return buffer.toByteArray();
     }
     
     /**
@@ -133,7 +165,7 @@ public class Wav2Vec2Scorer {
             OrtSession.Result result = session.run(inputs);
             
             // 3. 获取输出 logits
-            float[][] logits = (float[][]) result.get(0).getValue();
+            float[][][] logits = (float[][][]) result.get(0).getValue();
             
             // 4. CTC 解码（贪婪搜索）
             List<Integer> predictedIds = ctcGreedyDecode(logits[0]);

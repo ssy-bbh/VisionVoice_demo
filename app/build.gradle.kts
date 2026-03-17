@@ -37,6 +37,7 @@ android {
 
     aaptOptions {
         noCompress += ".tflite"
+        noCompress += ".onnx"
     }
 
     packaging {
@@ -67,7 +68,7 @@ dependencies {
     implementation("androidx.camera:camera-lifecycle:1.3.1")
     implementation("androidx.camera:camera-view:1.3.1")
     implementation(libs.core.ktx)
-
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.17.0")
     // Testing dependencies
     testImplementation(libs.junit)
     androidTestImplementation(libs.ext.junit)

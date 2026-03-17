@@ -5,6 +5,7 @@ import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -13,6 +14,7 @@ import androidx.fragment.app.Fragment;
 import com.example.myapplication.R;
 import com.example.myapplication.ui.ar.RealtimeActivity;
 import com.example.myapplication.ui.photo.PhotoRecognitionActivity;
+import com.example.myapplication.ui.test.OnnxTestActivity;
 
 public class HomeFragment extends Fragment {
 
@@ -28,6 +30,14 @@ public class HomeFragment extends Fragment {
         cardRealtime.setOnClickListener(v -> {
             Intent intent = new Intent(getActivity(), RealtimeActivity.class);
             startActivity(intent);
+        });
+
+        // 长按进入 ONNX 测试（临时入口）
+        cardRealtime.setOnLongClickListener(v -> {
+            Intent intent = new Intent(getActivity(), OnnxTestActivity.class);
+            startActivity(intent);
+            Toast.makeText(getActivity(), "进入 ONNX 测试模式", Toast.LENGTH_SHORT).show();
+            return true;
         });
 
         // Updated: Start PhotoRecognitionActivity

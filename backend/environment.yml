@@ -1,0 +1,17 @@
+name: visionvoice
+channels:
+  - conda-forge
+  - defaults
+  - pytorch
+dependencies:
+  - python=3.13
+  - pytorch
+  - torchaudio
+  - pip
+  - pip:
+    - optimum[onnxruntime]
+    - transformers
+    - phonemizer
+    - onnxruntime-gpu
+    - fastapi
+    - uvicorn
