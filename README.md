@@ -1,65 +1,180 @@
-# VisionVoice
-**版本**: v1.2
-**作者**：sybh
-## 项目概述
-VisionVoice 是一款结合了计算机视觉与自然语言处理的英语口语辅助学习应用。系统基于 Android 端侧的实时目标检测建立词汇物理映射，结合 Python 云端后端的自监督声学模型实现发音诊断与评分反馈。
+# VisionVoice 🎓📱
 
-## 核心技术实现
+**AR 英语学习助手 - 看见世界，学会英语**
 
-### 1. 移动端视觉推断 (Android / Kotlin)
-* **模型部署**: 基于 TFLite 部署 YOLOv8 轻量级模型 (`yolov8n`)。在 `YoloDetector.kt` 中采用 `ByteBuffer.allocateDirect()` 与内存复用策略，规避高频推断导致的大量 GC（垃圾回收）卡顿。
-* **数据流控制**: CameraX 采用 `STRATEGY_KEEP_ONLY_LATEST` 反压策略，结合 16:9 分辨率，确保低算力设备下的推断帧率。
-* **坐标映射与渲染**: 图像输入阶段使用全屏拉伸 (Stretch) 匹配 640x640 张量，后处理阶段将 BBox 坐标统一还原为归一化 (0~1) 坐标，最终精确映射至 `OverlayView` 实际像素，实现零黑边对齐。
-* **AR 交互去抖**:
-    * 算法层使用 NMS (IOU=0.45) 过滤冗余框。
-    * UI 层引入 200ms 时间戳防闪烁阈值。
-    * 事件层在多目标重叠场景下采用倒序遍历，优先响应 z-axis 最上层元素的点击事件，并触发分析器锁止 (`isResultLocked`) 以平滑转场。
-
-### 2. 云端声学评测模型 (Python / FastAPI)
-* **声学推断**: 基于 Wav2Vec2 预训练模型提取特征并进行 CTC 解码，输出音素序列。
-* **音频预处理 (AGC & Noise Gate)**: 针对低信噪比导致的模型“幻觉”插入问题，在输入特征流前加入振幅阈值检测（滤除环境白底噪）与自动增益控制（将有效波形等比例归一化），大幅提升清爆破音识别准确率。
-* **序列对齐算法**: 采用 Needleman-Wunsch 全局动态规划算法，计算标准音素集与用户推断音素集的最小编辑距离。
-* **基于 L1 负迁移的诊断矩阵**: 摒弃非黑即白的严格匹配，构建三级判别器：
-    * `Ignored`: 过滤硬件杂音导致的无意义错音（如 `t` -> `ts`），强制修正。
-    * `Flaw`: 捕获受母语影响的元音偏移与清浊音混淆，加权给分并返回具体诊断。
-    * `Substitution/Deletion`: 判定为绝对错读或吞音。
-* **非线性分数映射**: 对底层匹配率进行分段函数重映射（宽容高分段，压缩低分段），输出符合正常教育评测逻辑的百分制分数。
-
-### 3. 工程优化与通信闭环
-* 采用 Monorepo 结构协同开发。
-* 利用 `start.bat` 脚本实现 `adb reverse` 端口映射与 Uvicorn 服务自启动。
-* **防截断处理**: Android 录音采集端引入 500ms 异步延迟停止机制，解决爆破音尾音丢失的物理截断问题。
-* **标准音源**: 接入 Android 原生 TTS 引擎提供无延迟的美音示范。
+[![Platform](https://img.shields.io/badge/platform-Android-green.svg)](https://developer.android.com/)
+[![SDK](https://img.shields.io/badge/SDK-24--36-blue.svg)](https://developer.android.com/studio/releases/platforms)
+[![ML](https://img.shields.io/badge/ML-YOLO+Wav2Vec2-orange.svg)](https://github.com/ultralytics/yolov8)
 
 ---
 
-## 快速开始
+## 🌟 功能亮点
 
-**1. 启动后端 (Windows)**
-在项目根目录执行启动脚本：
-```powershell
-.\start.bat
+### 📷 AR 实时识别
+- 摄像头扫描周围物体
+- 实时显示英文名称
+- 40 类物体识别（教室/家庭/农村/户外）
+
+### 🎤 发音练习
+- AI 发音评分
+- 音素级对比反馈
+- TTS 发音示范
+- 🆕 **端侧评估**（离线可用）
+
+### 📚 单词管理
+- 收藏学过的单词
+- 学习统计
+- 个人中心
+
+---
+
+## 🚀 快速开始
+
+### 1. 克隆项目
+```bash
+git clone <your-repo-url>
+cd MyApplication
 ```
-*(需确保手机已开启 USB 调试并连接电脑，脚本会自动执行 8000 端口映射并激活 Conda 环境)*
 
-**2. 运行前端**
-通过 Android Studio 同步 Gradle 并将 App 部署至物理机。
+### 2. 打开项目
+用 Android Studio 打开项目目录：
+```
+D:\AndroidStudioProjects\MyApplication
+```
+
+### 3. 同步依赖
+Android Studio 会自动同步 Gradle 依赖
+
+### 4. 运行应用
+连接 Android 设备或启动模拟器，点击 Run
 
 ---
 
-## 📅 未来演进路线 (Roadmap)
+## 📖 文档
 
-本项目正处于持续迭代中，后续架构升级将围绕以下三个核心维度展开：
+| 文档 | 说明 |
+|------|------|
+| [**项目主文档**](docs/PROJECT_README.md) | 完整的项目说明和技术架构 |
+| [**快速指南**](docs/QUICK_START.md) | 端侧部署 5 分钟快速开始 |
+| [**完整指南**](docs/WAV2VEC2_ONNX_GUIDE.md) | Wav2Vec2 端侧部署详细步骤 |
+| [**变更日志**](docs/CHANGELOG.md) | 版本历史和开发日志 |
 
-### Phase 1: 领域词汇扩充与视觉模型微调 (Transfer Learning)
-* **痛点**: 当前预训练模型受限于 COCO 数据集的 80 个通用类别，无法覆盖英语初学者的核心日常词汇（如文具、家具、水果等细分类目）。
-* **方案**: 采用迁移学习 (Transfer Learning)。基于自定义的日常物品数据集（Objects365 子集或自行标注数据），对 `yolov8n.pt` 进行 Fine-tuning。
-* **部署**: 训练完成后，应用 PTQ (Post-Training Quantization) 量化技术，导出为 `INT8` 或 `Float32` 格式的 `.tflite` 模型，替换现有端侧权重，将识别词汇量平滑扩展至 200+。
+---
 
-### Phase 2: 本地高频错词沉淀 (Room Database)
-* **方案**: 在 Android 端引入 Room ORM 框架，建立本地生词本。
-* **逻辑**: 评测结束后，触发拦截器。对于综合得分低于 60% 的单词，自动提取其 `Word`, `Score`, `Flaw_Reason` 与 `Timestamp` 落盘存储，为后续引入艾宾浩斯记忆曲线复习算法提供数据支撑。
+## 🏗️ 技术架构
 
-### Phase 3: 多端状态同步 (Cloud Sync)
-* **方案**: 扩展目前的 FastAPI 后端职能。
-* **逻辑**: 引入 `SQLAlchemy` 配合轻量级关系型数据库。新增 `POST /sync_words/` 与 `GET /get_words/` 接口，实现用户发音瑕疵记录的云端持久化与多设备状态同步。
+### 前端
+- **语言：** Java
+- **SDK：** 24-36
+- **相机：** CameraX
+- **UI：** Material Design
+
+### 机器学习
+- **物体检测：** YOLOv8n (TFLite)
+- **发音评估：** Wav2Vec2 (ONNX)
+- **端侧推理：** ONNX Runtime Mobile
+
+### 后端（可选）
+- **框架：** Python FastAPI
+- **发音评分：** Wav2Vec2 + 音素对齐
+- **部署：** 本地/云端
+
+---
+
+## 📂 项目结构
+
+```
+MyApplication/
+├── app/                          # Android 主模块
+│   └── src/main/java/.../
+│       ├── ml/                   # ML 模块
+│       │   ├── ObjectRecognitionHelper.java
+│       │   └── Wav2Vec2Scorer.java
+│       ├── ui/                   # UI 界面
+│       │   ├── home/
+│       │   ├── ar/
+│       │   ├── practice/
+│       │   └── ...
+│       └── view/                 # 自定义视图
+├── backend/                      # Python 后端
+│   ├── server.py
+│   └── export_onnx.py
+└── docs/                         # 文档
+    ├── PROJECT_README.md
+    ├── QUICK_START.md
+    └── ...
+```
+
+---
+
+## 🔧 开发环境
+
+### 必需
+- Android Studio Hedgehog 或更高版本
+- JDK 11+
+- Android SDK 24-36
+
+### 可选（后端开发）
+- Python 3.8+
+- FastAPI
+- PyTorch
+- Transformers
+
+---
+
+## 📝 开发日志
+
+### 2026-03-17
+- ✅ 创建完整项目文档
+- ✅ 添加 Wav2Vec2 端侧部署支持
+- ✅ 创建 ONNX 导出脚本
+- ✅ 整理项目结构
+- ✅ Git 提交和版本控制
+
+**详细记录：** [docs/CHANGELOG.md](docs/CHANGELOG.md)
+
+---
+
+## 🎯 下一步计划
+
+### 短期
+- [ ] 导出 ONNX 模型
+- [ ] 集成 ONNX Runtime Mobile
+- [ ] 测试端侧推理
+
+### 中期
+- [ ] 完善音素词典
+- [ ] 实现混合模式切换
+- [ ] 性能优化
+
+### 长期
+- [ ] 用户测试
+- [ ] 发布 Beta 版本
+- [ ] 功能扩展
+
+---
+
+## 📚 参考资料
+
+- **论文：** ARIELLE: AR-based Independent and Experiential Language Learner on the Edge (2024 IEEE APCCAS)
+- **ONNX Runtime:** https://onnxruntime.ai/
+- **Wav2Vec2:** https://huggingface.co/facebook/wav2vec2-base
+- **YOLOv8:** https://docs.ultralytics.com/
+
+---
+
+## 👥 团队
+
+**开发者：** VisionVoice Team  
+**AI 助手：** OpenClaw  
+
+---
+
+## 📄 许可证
+
+本项目仅供学习和研究使用。
+
+---
+
+**最后更新：** 2026-03-17  
+**版本：** v1.0.0
