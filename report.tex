@@ -1,0 +1,246 @@
+\documentclass[a4paper, 12pt]{article}
+
+% Core Chinese support package
+\usepackage[heading=true]{ctex}
+
+% Common packages
+\usepackage{geometry}
+\usepackage{graphicx}
+\usepackage{url}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{booktabs}
+
+\geometry{left=2.5cm, right=2.5cm, top=2.5cm, bottom=2.5cm}
+
+\title{\textbf{VisionVoice Android Application – Project Development Report}}
+\author{Author: Song Yaobohan， Liu Yanfeng}
+\date{Date: 2025-11-27 \\ Version: v1.1 (YOLOv8 Introduced and Performance Optimized)}
+
+\begin{document}
+
+    \maketitle
+
+    \section{Introduction}
+
+    \subsection{Problem Statement}
+    In language learning, especially in vocabulary acquisition, learners often encounter the situation of recognizing an object visually but being unable to recall or express its name in a foreign language. Traditional solutions such as dictionary lookup or translation applications require manual text input or OCR-based workflows, which interrupt the learning process and reduce contextual continuity.
+
+    This project addresses a broader system-level problem: the lack of an integrated mechanism that directly transforms real-world visual perception into immediate and structured language learning feedback. Existing tools either focus on text translation, general information retrieval, or abstract vocabulary training, leaving a gap between visual experience and language acquisition.
+
+    In addition, classroom language learning often emphasizes discussion and demonstration rather than direct instruction. To encourage participation and reduce learners’ hesitation, tools that naturally integrate learning into real-world interaction are needed.
+
+    \paragraph{References}
+    Endriyati, Prabowo, Abasa, Akmal. (2023). Challenges In Teaching English At Rural And Urban Schools And Their Solutions. \textit{Journal Name}, Volume(Issue).
+
+    \subsection{Motivation}
+    Situated learning theory suggests that knowledge acquired in real environments is more likely to be retained and transferred. By combining the portability of mobile devices with the immediacy of on-device artificial intelligence, a new “Point-and-Learn” vocabulary learning experience can be created.
+
+    \subsubsection{Scientific Basis of Multisensory Association}
+    Situated cognition supports the view that learning is inseparable from context and activity. VisionVoice operationalizes this idea by embedding vocabulary acquisition directly into users’ physical environments, allowing learners to associate objects, visual context, and auditory feedback within a single interaction.
+
+    \subsubsection{Technical Feasibility}
+    Research on context-aware systems demonstrates that leveraging existing mobile sensing and inference capabilities enables scalable and responsive learning applications. On-device inference further enhances privacy, reduces latency, and removes network dependency.
+
+    \begin{figure}[htbp]
+        \centering
+        \includegraphics[width=0.8\textwidth]{矢量图/用例图.pdf}
+        \caption{System Use Case Diagram}
+    \end{figure}
+
+    \subsection{Objectives}
+    The primary goal of this project is to develop an Android application named VisionVoice with the following capabilities:
+    \begin{enumerate}
+        \item Real-time object recognition using the device camera.
+        \item Object recognition from static images selected from the gallery.
+        \item Display of English object names with a simulated pronunciation practice workflow.
+        \item A robust, modular, and extensible architecture to support future expansion.
+    \end{enumerate}
+
+    \section{Background / Research}
+
+    \subsection{Background}
+    With the rapid advancement of mobile hardware, running complex machine learning models directly on devices has become feasible. Compared with cloud-based approaches, on-device AI offers low latency, offline availability, enhanced privacy, and reduced infrastructure cost. TensorFlow Lite is one of the primary frameworks enabling such deployments.
+
+    \subsection{Literature Review (Related Work Analysis)}
+    Prior to development, existing applications were analyzed:
+
+    \begin{itemize}
+        \item \textbf{Traditional dictionary and translation applications}: Primarily text-driven and dependent on manual input or OCR.
+        \item \textbf{General-purpose vision applications}: Capable of object recognition but focused on information retrieval rather than structured learning.
+        \item \textbf{Language learning applications}: Effective for memorization but disconnected from real-world visual context.
+    \end{itemize}
+
+    \paragraph{Gap Analysis}
+    This analysis reveals a clear gap among existing solutions. No current system provides an end-to-end pipeline that directly converts real-world visual input into structured vocabulary learning output. VisionVoice is specifically designed to address this gap by integrating object recognition with immediate language learning feedback in a single workflow.
+
+    \subsection{Technology Stack}
+    \begin{itemize}
+        \item Programming Language: Java 11
+        \item Core Framework: Android SDK (API Level 34)
+        \item UI: AndroidX, Material Design 3
+        \item Camera: CameraX API
+        \item Machine Learning: TensorFlow Lite (yolov8n.tflite)
+    \end{itemize}
+
+    \section{Methodology}
+
+    \subsection{Project Workflow}
+    The project workflow is designed to provide a clear user path and modular code structure.
+
+    \begin{figure}[htbp]
+        \centering
+        \includegraphics[width=0.8\textwidth]{矢量图/流程图.pdf}
+        \caption{Project Workflow Diagram}
+    \end{figure}
+
+    \subsection{Design Process and Model Iteration}
+
+    \textbf{Phase 1: Image Classification Prototype (V0.1)} \\
+    An EfficientNet-based image classification model was used to rapidly validate feasibility. However, this approach could not support multi-object scenarios or spatial awareness.
+
+    \textbf{Phase 2: Transition to Object Detection (V1.0)} \\
+    To overcome these limitations, the system was upgraded to a YOLOv8-based object detection model. This enabled multi-object recognition and provided spatial information necessary for future visual feedback features.
+
+    \textbf{Phase 3: Architecture and Performance Optimization (V1.1)} \\
+    Machine learning logic was refactored into a unified helper class, and performance optimizations were applied to preprocessing, post-processing, and inference scheduling.
+
+    \paragraph{Impact of Model Iteration}
+    The transition from image classification to object detection fundamentally expanded system capability. While increasing implementation complexity, this shift enabled richer interaction and laid the foundation for future AR-style extensions.
+
+    \subsection{Object Recognition Model Selection Rationale}
+
+    Selecting an appropriate object detection model for on-device deployment requires balancing three competing constraints: real-time performance (target $\geq$15 FPS on mid-range Android hardware), detection accuracy sufficient to recognise common classroom objects, and a model footprint small enough to fit within the application package without exhausting device storage or RAM.
+
+    \subsubsection{Candidate Model Comparison}
+
+    Four representative architectures were evaluated before a final decision was made:
+
+    \begin{itemize}
+        \item \textbf{YOLOv4} (Bochkovskiy et al., 2020): Achieves a strong mAP of 65.7 on COCO, but the exported weight file exceeds 245\,MB. This size is prohibitive for mobile deployment and would cause excessive memory pressure on devices with limited RAM.
+        \item \textbf{MobileNetV2 + SSD} (Sandler et al., 2018): At approximately 20\,MB the model is compact, but its mAP of 22.1 is insufficient for reliably distinguishing everyday objects in varied lighting conditions.
+        \item \textbf{MobileNetV3 + SSD} (Howard et al., 2019): Marginally smaller than V2 at 16\,MB and slightly more accurate (mAP 24.8), yet still falls short of the accuracy threshold required for a satisfying learning experience.
+        \item \textbf{EfficientDet} (Tan \& Le, 2020): Offers a better accuracy-to-size trade-off (mAP 33.8, $\sim$26\,MB), but inference speed on ARM CPUs without dedicated NPU support was measured to be noticeably slower than YOLO-family models.
+        \item \textbf{YOLOv8n (Nano)} (Ultralytics, 2023): Achieves mAP 37.3 at only 12.5\,MB. The single-stage, anchor-free architecture delivers low-latency inference and the TFLite export path is officially supported, making it the optimal choice.
+    \end{itemize}
+
+    \subsubsection{Why YOLOv8n over Earlier YOLO Versions}
+
+    YOLOv8 introduces an anchor-free detection head that eliminates the need to hand-tune anchor box priors, simplifying post-processing. The decoupled head separates classification and regression branches, which improves gradient flow during training and yields better small-object recall. Compared with YOLOv5n (the previous generation Nano variant), YOLOv8n achieves approximately 3--4 mAP points higher on COCO while maintaining a comparable parameter count. This improvement is meaningful in a vocabulary-learning context where misidentifying a ``cup'' as a ``bowl'' would directly mislead the learner.
+
+    \subsubsection{Why TFLite over ONNX Runtime for the Vision Model}
+
+    Although ONNX Runtime Mobile was ultimately chosen for the Wav2Vec2 speech model (see Section~\ref{sec:onnx}), TFLite was preferred for the vision model for the following reasons:
+
+    \begin{enumerate}
+        \item \textbf{Native Android integration}: TFLite is developed by Google and ships with first-party Android support libraries, reducing dependency management overhead.
+        \item \textbf{Memory-mapped loading}: TFLite's \texttt{MappedByteBuffer} API, backed by \texttt{AssetFileDescriptor}, allows the OS to map the model file directly into virtual memory without copying it into the Java heap. This is critical for a 12.5\,MB model that would otherwise compete with runtime allocations.
+        \item \textbf{Hardware acceleration}: TFLite's GPU delegate and NNAPI delegate can transparently offload convolution operations to the device GPU or dedicated neural processing unit, further reducing inference latency.
+    \end{enumerate}
+
+    \section{Implementation}
+
+    \subsection{Technical Details}
+    \begin{itemize}
+        \item Navigation: Fragment switching via \texttt{BottomNavigationView}.
+        \item Unified Recognition Interface: \texttt{ObjectRecognitionHelper} encapsulates preprocessing, inference, and post-processing.
+        \item Real-Time Optimization: Recognition frequency is throttled to once every 500 milliseconds.
+    \end{itemize}
+
+    \begin{figure}[htbp]
+        \centering
+        \includegraphics[width=0.9\textwidth]{矢量图/时序图.pdf}
+        \caption{System Sequence Diagram}
+    \end{figure}
+
+    \begin{figure}[htbp]
+        \centering
+        \includegraphics[width=0.9\textwidth]{矢量图/组件图.pdf}
+        \caption{Software Architecture Diagram}
+    \end{figure}
+
+    \subsubsection{Design Rationale}
+    During development, significant duplication of recognition logic was identified across multiple activities. To address this issue, all machine learning-related functionality was encapsulated within the \texttt{ObjectRecognitionHelper} class. This design improves maintainability, enforces separation between UI and ML logic, and allows multiple components to reuse the same recognition pipeline.
+
+    \subsection{Challenges and Solutions}
+
+    \paragraph{Model Compatibility and API Selection}
+    Due to missing metadata in the YOLOv8 model, high-level APIs were unavailable. The system therefore adopts the lower-level \texttt{Interpreter} API, enabling full control over preprocessing and output parsing at the cost of increased implementation complexity.
+
+    \paragraph{Asynchronous Processing}
+    To avoid UI blocking, the system separates the UI thread, camera input processing, and AI inference into distinct execution contexts, communicating via callback interfaces.
+
+    \subsection{Core Technical Challenges and Solutions in Object Recognition}
+
+    \subsubsection{Challenge 1: Raw Output Tensor Parsing}
+
+    YOLOv8n produces a raw output tensor of shape \texttt{[1, (4 + num\_classes), 8400]}, where 8400 candidate boxes are generated from three detection heads (80$\times$80 + 40$\times$40 + 20$\times$20 = 8400). The first four channels encode the bounding box in centre-format $(c_x, c_y, w, h)$ normalised to $[0,1]$, and the remaining 40 channels contain per-class confidence scores.
+
+    Because the YOLOv8 TFLite export omits the standard metadata required by TFLite's high-level \texttt{ObjectDetector} API, the system must parse this tensor manually. The custom post-processing pipeline iterates over all 8400 candidates, applies \texttt{argmax} across the class dimension to identify the most probable class, and retains only those candidates whose confidence exceeds a threshold of 0.5. This threshold was chosen empirically: values below 0.4 produced excessive false positives in cluttered scenes, while values above 0.6 caused missed detections under moderate occlusion.
+
+    \subsubsection{Challenge 2: Bounding Box Coordinate Restoration}
+
+    YOLOv8 outputs bounding boxes in centre format relative to the 640$\times$640 input resolution. These must be converted to corner format and then scaled back to the original camera frame dimensions before the AR overlay can be rendered correctly:
+
+    \begin{align}
+        x_{\min} &= (c_x - w/2) \times \frac{W_{\text{orig}}}{640} \\
+        y_{\min} &= (c_y - h/2) \times \frac{H_{\text{orig}}}{640} \\
+        x_{\max} &= (c_x + w/2) \times \frac{W_{\text{orig}}}{640} \\
+        y_{\max} &= (c_y + h/2) \times \frac{H_{\text{orig}}}{640}
+    \end{align}
+
+    A subtle but important detail is that CameraX delivers preview frames in a resolution that may differ from the display surface size. The scaling factors $W_{\text{orig}}/640$ and $H_{\text{orig}}/640$ must therefore be computed from the \emph{analysis} resolution, not the \emph{display} resolution, to avoid systematic bounding-box misalignment.
+
+    \subsubsection{Challenge 3: Memory-Mapped Model Loading}
+
+    Loading a 12.5\,MB TFLite model via the naive \texttt{byte[]} approach would allocate the entire file on the Java heap, competing with runtime objects and increasing GC pressure. Instead, the system uses \texttt{FileChannel.map()} to create a \texttt{MappedByteBuffer} backed by the operating system's virtual memory subsystem:
+
+\begin{verbatim}
+AssetFileDescriptor fd = assetManager.openFd("yolov8n.tflite");
+FileChannel ch = new FileInputStream(fd.getFileDescriptor()).getChannel();
+MappedByteBuffer modelBuffer = ch.map(
+    FileChannel.MapMode.READ_ONLY,
+    fd.getStartOffset(),
+    fd.getDeclaredLength());
+\end{verbatim}
+
+    The OS maps model pages on demand and can evict them under memory pressure without involving the Java garbage collector. This keeps the Java heap footprint of the vision model near zero, leaving headroom for the much larger Wav2Vec2 model loaded later.
+
+    \subsubsection{Challenge 4: Simplified NMS Strategy (Custom Optimisation)}
+
+    Standard Non-Maximum Suppression (NMS) requires sorting all candidate boxes by confidence, then iteratively suppressing boxes whose Intersection-over-Union (IoU) with a higher-confidence box exceeds a threshold. For a vocabulary-learning application the user typically points the camera at a single salient object, so the full NMS procedure introduces unnecessary computation.
+
+    A custom \emph{top-1 confidence selection} strategy was devised: after filtering by the 0.5 confidence threshold, only the single candidate with the highest confidence score is retained and forwarded to the UI layer. This reduces post-processing time from $O(n^2)$ (IoU comparisons across all surviving boxes) to $O(n)$ (a single linear scan), with no perceptible accuracy loss in the target use case. The strategy is equivalent to NMS with an IoU threshold of 1.0, which suppresses nothing but selects the globally most confident detection.
+
+    \subsubsection{Challenge 5: Inference Thread Isolation}
+
+    TFLite's \texttt{Interpreter} is not thread-safe. CameraX delivers preview frames on a background executor thread, while the UI must remain responsive on the main thread. A dedicated single-thread executor is used exclusively for inference, and results are posted back to the main thread via a callback interface:
+
+\begin{verbatim}
+executorService.execute(() -> {
+    DetectionResult result = helper.detectObjects(bitmap);
+    mainHandler.post(() -> callback.onResult(result));
+});
+\end{verbatim}
+
+    An additional 500\,ms throttle gate prevents the executor queue from accumulating frames faster than inference can process them, ensuring that the system degrades gracefully on slower devices rather than building up unbounded latency.
+
+    \subsubsection{Challenge 6: Input Normalisation Alignment}
+
+    YOLOv8n was trained with pixel values normalised to $[0, 1]$ by dividing by 255. TFLite's \texttt{ImageProcessor} pipeline applies this normalisation via \texttt{NormalizeOp(0f, 255f)}, which subtracts the mean (0) and divides by the standard deviation (255). Omitting this step or using the wrong scale factor causes the model to receive out-of-distribution inputs, dramatically reducing detection confidence and producing erratic bounding boxes. This was identified as the root cause of an early bug where the model consistently reported near-zero confidence for all classes despite correct tensor shapes.
+
+    \section{Results and Discussion}
+
+    The project demonstrates the feasibility of integrating on-device object detection with contextual language learning. The modular architecture enables reuse of the recognition pipeline across multiple interaction modes, validating the effectiveness of the design.
+
+    \paragraph{System Validation}
+    The successful reuse of \texttt{ObjectRecognitionHelper} across real-time and photo-based recognition scenarios confirms the robustness and extensibility of the system architecture. The optimized inference pipeline further demonstrates that on-device object detection can support interactive learning workflows without reliance on cloud services.
+
+    \section{Future Work}
+    \begin{enumerate}
+        \item Visualizing detection results using bounding boxes.
+        \item Integrating real pronunciation practice via TTS and audio recording.
+        \item Persisting learning records using a local database.
+    \end{enumerate}
+
+\end{document}

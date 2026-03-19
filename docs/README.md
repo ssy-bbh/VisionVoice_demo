@@ -1,37 +1,34 @@
-# VisionVoice 项目 - 快速开始
+# VisionVoice 项目文档
 
-## 🎯 下一步操作（按顺序）
-
-### 1️⃣ 安装 Python 依赖（5分钟）
-```bash
-cd D:\AndroidStudioProjects\MyApplication\backend
-pip install optimum[onnxruntime] transformers torch torchaudio phonemizer onnxruntime-gpu
-```
-
-### 2️⃣ 导出 ONNX 模型（10-15分钟）
-```bash
-python export_onnx.py
-# 选择模型 1 (facebook/wav2vec2-base)
-# 是否量化？y
-```
-
-### 3️⃣ 更新 Android 依赖
-打开 `app/build.gradle.kts`，添加：
-```kotlin
-implementation("com.microsoft.onnxruntime:onnxruntime-android:1.17.0")
-```
-然后 **Sync Gradle**
-
-### 4️⃣ 测试端侧模型
-- 打开 Android Studio
-- 同步项目
-- 运行 App 测试
-
-## 📚 完整参考
-- `docs/QUICK_START.md` - 详细步骤
-- `docs/WAV2VEC2_ONNX_GUIDE.md` - 完整指南
-- `docs/CHANGELOG.md` - 变更日志
+**AR 英语学习应用** - 通过 AR 视觉识别 + 语音识别帮助用户学习英语单词和发音。
 
 ---
 
-**项目位置：** `D:\AndroidStudioProjects\MyApplication\`
+## 快速入口
+
+| 需求 | 文档 |
+|------|------|
+| 首次搭建 | `setup/QUICK_START.md` |
+| 模型导出 | `setup/ONNX_GUIDE.md` |
+| 项目结构 | `dev/STRUCTURE.md` |
+| 变更记录 | `logs/CHANGELOG.md` |
+
+---
+
+## 技术栈
+
+- **前端**: Android (Java) + CameraX + ML Kit
+- **AI 模型**: YOLOv8n (物体检测) + Wav2Vec2 (语音识别)
+- **后端**: FastAPI (可选，本地优先)
+
+---
+
+## 项目位置
+
+```
+D:\AndroidStudioProjects\MyApplication\
+├── app/                    # Android 主模块
+├── backend/                # Python 后端 (模型导出)
+├── docs/                   # 本文档目录
+└── README.md              # 本文件
+```
