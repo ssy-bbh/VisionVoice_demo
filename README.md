@@ -92,5 +92,5 @@ MyApplication/
 
 ---
 
-**维护团队**: VisionVoice Team  
+**维护团队**: SONG  
 **AI 协助**: OpenClaw
