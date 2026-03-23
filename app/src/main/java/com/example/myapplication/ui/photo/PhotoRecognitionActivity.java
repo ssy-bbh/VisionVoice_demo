@@ -28,7 +28,7 @@ import java.io.IOException;
 import java.util.List;
 
 public class PhotoRecognitionActivity extends AppCompatActivity {
-
+    private String currentImageUri = null;
     private static final String TAG = "VISION_DEBUG";
 
     private ImageView ivSelectedImage;
@@ -66,6 +66,7 @@ public class PhotoRecognitionActivity extends AppCompatActivity {
                 result -> {
                     if (result.getResultCode() == Activity.RESULT_OK && result.getData() != null) {
                         Uri imageUri = result.getData().getData();
+                        currentImageUri = imageUri.toString(); // 保存 URI 字符串
                         try {
                             Bitmap bitmap = MediaStore.Images.Media.getBitmap(this.getContentResolver(), imageUri);
                             ivSelectedImage.setImageBitmap(bitmap);
@@ -88,6 +89,13 @@ public class PhotoRecognitionActivity extends AppCompatActivity {
             if (currentRecognitionResult != null && !currentRecognitionResult.isEmpty()) {
                 Intent intent = new Intent(PhotoRecognitionActivity.this, PracticeActivity.class);
                 intent.putExtra("extra_word", currentRecognitionResult);
+
+                // 核心修改：使用 setData 传递 URI，并赋予读取权限
+                if (currentImageUri != null) {
+                    intent.setData(android.net.Uri.parse(currentImageUri));
+                    intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION); // 必须加这行
+                }
+
                 startActivity(intent);
             }
         });

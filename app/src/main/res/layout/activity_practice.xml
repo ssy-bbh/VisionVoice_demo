@@ -181,7 +181,7 @@
                 android:layout_marginStart="24dp"
                 android:orientation="vertical">
                 <TextView
-                    android:text="Good Job!"
+                    android:id="@+id/tvFeedbackText"  android:text="Good Job!"
                     android:textSize="20sp"
                     android:textStyle="bold"
                     android:textColor="@color/text_primary"

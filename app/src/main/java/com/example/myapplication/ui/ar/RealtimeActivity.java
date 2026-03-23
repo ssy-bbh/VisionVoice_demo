@@ -37,7 +37,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class RealtimeActivity extends AppCompatActivity {
-
+    private Bitmap latestBitmap = null;
     private static final int CAMERA_PERMISSION_REQUEST_CODE = 101;
     private static final String TAG = "VISION_DEBUG";
 
@@ -86,19 +86,26 @@ public class RealtimeActivity extends AppCompatActivity {
         // 当用户点击屏幕上的绿框时，会执行这里的代码
         if (overlayView != null) {
             overlayView.setOnBoxClickListener(result -> {
-                // (1) 锁定结果，防止跳转过程中数据刷新
                 isResultLocked = true;
-
-                // (2) 获取单词和置信度
                 String detectedWord = result.getLabel();
-                float score = result.getScore();
 
-                Log.d(TAG, "点击了单词: " + detectedWord);
-
-                // (3) 跳转到 PracticeActivity (或者 ResultActivity)
                 Intent intent = new Intent(RealtimeActivity.this, PracticeActivity.class);
                 intent.putExtra("extra_word", detectedWord);
-                // intent.putExtra("extra_score", score); // 如果需要传分数可以解开这行
+
+                // 将 latestBitmap 保存到缓存并传递路径
+                if (latestBitmap != null) {
+                    String imagePath = getCacheDir() + "/temp_ar_image.jpg";
+                    try {
+                        java.io.FileOutputStream out = new java.io.FileOutputStream(imagePath);
+                        latestBitmap.compress(Bitmap.CompressFormat.JPEG, 90, out);
+                        out.flush();
+                        out.close();
+                        intent.putExtra("extra_image_path", imagePath); // 传递文件路径
+                    } catch (Exception e) {
+                        Log.e(TAG, "保存AR截帧失败", e);
+                    }
+                }
+
                 startActivity(intent);
             });
         }
@@ -157,23 +164,21 @@ public class RealtimeActivity extends AppCompatActivity {
                         .build();
 
                 imageAnalysis.setAnalyzer(cameraExecutor, imageProxy -> {
-                    // 如果被锁定（正在跳转中），直接忽略这一帧
                     if (isResultLocked) {
                         imageProxy.close();
                         return;
                     }
-
                     try {
                         @SuppressLint("UnsafeOptInUsageError")
                         Bitmap bitmap = imageProxy.toBitmap();
                         int rotation = imageProxy.getImageInfo().getRotationDegrees();
-
-                        // 【旋转修正】
                         if (rotation != 0) {
                             Matrix matrix = new Matrix();
                             matrix.postRotate(rotation);
                             bitmap = Bitmap.createBitmap(bitmap, 0, 0, bitmap.getWidth(), bitmap.getHeight(), matrix, true);
                         }
+
+                        latestBitmap = bitmap; // 核心：在这里把旋转好的最新图片保存下来
 
                         // 【YOLO 识别】
                         List<YoloDetector.Result> results = yoloDetector.detect(bitmap);

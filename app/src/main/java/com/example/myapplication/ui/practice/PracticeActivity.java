@@ -7,6 +7,7 @@ import android.os.Bundle;
 import android.speech.tts.TextToSpeech;
 import android.util.Log;
 import android.view.View;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.Switch;
 import android.widget.TextView;
@@ -45,7 +46,7 @@ public class PracticeActivity extends AppCompatActivity {
     private static final String TAG = "PracticeActivity";
     private static final int REQUEST_RECORD_AUDIO_PERMISSION = 200;
     private static final String SERVER_URL = "http://127.0.0.1:8000/evaluate_pronunciation/";
-
+    private TextView tvFeedbackText;
     // ===== 视图 =====
     private TextToSpeech textToSpeech;
     private BottomSheetBehavior<View> bottomSheetBehavior;
@@ -76,8 +77,8 @@ public class PracticeActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_practice);
-
-        // 初始化视图
+        tvFeedbackText = findViewById(R.id.tvFeedbackText);
+            // 初始化视图
         tvWord      = findViewById(R.id.tvTargetWord);
         rippleView  = findViewById(R.id.viewRipple);
         llPhonemeContainer = findViewById(R.id.llPhonemeContainer);
@@ -109,6 +110,21 @@ public class PracticeActivity extends AppCompatActivity {
         }
         fetchPhonetics(targetWord); // 后台请求后端，更新为 phonemizer 结果并写入缓存
 
+        // ... 在 findViewById 之后 ...
+        ImageView ivTargetImage = findViewById(R.id.ivTargetImage);
+
+// 1. 获取 Intent 传来的图片数据
+        String imagePath = getIntent().getStringExtra("extra_image_path"); // 接收实时画面截图
+        android.net.Uri imageUri = getIntent().getData(); // 接收相册 URI（注意这里改用 getData 了）
+
+// 2. 加载图片并清除灰色 Tint
+        if (imageUri != null) {
+            ivTargetImage.setImageURI(imageUri);
+            ivTargetImage.setImageTintList(null); // 核心：移除灰色遮罩
+        } else if (imagePath != null) {
+            ivTargetImage.setImageBitmap(android.graphics.BitmapFactory.decodeFile(imagePath));
+            ivTargetImage.setImageTintList(null); // 核心：移除灰色遮罩
+        }
         // TTS
         textToSpeech = new TextToSpeech(this, status -> {
             if (status == TextToSpeech.SUCCESS) {
@@ -478,10 +494,16 @@ public class PracticeActivity extends AppCompatActivity {
     private void colorScore(int score) {
         if (score >= 80) {
             tvScore.setTextColor(ContextCompat.getColor(this, R.color.success_green));
+            tvFeedbackText.setText("Excellent!"); // 优秀
+            tvFeedbackText.setTextColor(ContextCompat.getColor(this, R.color.success_green));
         } else if (score >= 60) {
             tvScore.setTextColor(android.graphics.Color.parseColor("#F57C00"));
+            tvFeedbackText.setText("Good Try!"); // 良好
+            tvFeedbackText.setTextColor(android.graphics.Color.parseColor("#F57C00"));
         } else {
             tvScore.setTextColor(ContextCompat.getColor(this, R.color.error_red));
+            tvFeedbackText.setText("Keep Practicing!"); // 加油
+            tvFeedbackText.setTextColor(ContextCompat.getColor(this, R.color.error_red));
         }
     }
 
