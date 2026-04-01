@@ -19,11 +19,14 @@ import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
 import com.example.myapplication.R;
+import com.example.myapplication.data.AppDao;
+import com.example.myapplication.data.AppDatabase;
+import com.example.myapplication.data.PracticeRecord;
+import com.example.myapplication.data.ShowcaseItem;
 import com.example.myapplication.ml.AudioProcessor;
 import com.example.myapplication.ml.PhonemeCache;
 import com.example.myapplication.ml.Wav2Vec2Scorer;
 import com.google.android.material.bottomsheet.BottomSheetBehavior;
-
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -42,7 +45,7 @@ import okhttp3.RequestBody;
 import okhttp3.Response;
 
 public class PracticeActivity extends AppCompatActivity {
-
+    private String currentImagePath = null;
     private static final String TAG = "PracticeActivity";
     private static final int REQUEST_RECORD_AUDIO_PERMISSION = 200;
     private static final String SERVER_URL = "http://127.0.0.1:8000/evaluate_pronunciation/";
@@ -97,7 +100,7 @@ public class PracticeActivity extends AppCompatActivity {
         targetWord = getIntent().getStringExtra("extra_word");
         if (targetWord == null) targetWord = "apple";
         tvWord.setText(targetWord);
-
+        currentImagePath = getIntent().getStringExtra("extra_image_path");
         // 获取音标：PhonemeCache.get() 已整合运行时缓存 + CMU Dict，直接调用
         TextView tvPhonetic = findViewById(R.id.tvPhonetic);
         String phonemes = phonemeCache.get(targetWord);
@@ -485,6 +488,67 @@ public class PracticeActivity extends AppCompatActivity {
                 displayScore = Math.max(0, Math.min(100, displayScore));
                 tvScore.setText(displayScore + "%");
                 colorScore(displayScore);
+                int finalScore = displayScore;
+
+                AppDatabase.databaseWriteExecutor.execute(() -> {
+                    try {
+                        // 获取数据库操作接口 (DAO)
+                        AppDao dao = AppDatabase.getInstance(PracticeActivity.this).appDao();
+
+                        // ================= 1. 记录这次练习流水 (你已经写好的) =================
+                        PracticeRecord record = new PracticeRecord(
+                                targetWord,
+                                finalScore,
+                                System.currentTimeMillis(),
+                                currentImagePath
+                        );
+                        dao.insertRecord(record);
+                        android.util.Log.d("VISION_DEBUG", "✅ 成功保存记录流水: " + targetWord + " 得分: " + finalScore);
+
+                        // ================= 2. 展柜解锁与“擦亮”逻辑 (新增) =================
+                        ShowcaseItem item = dao.getShowcaseItemByWord(targetWord);
+
+                        if (item != null) {
+                            // 说明展柜里预设了这个物品！
+                            if (!item.isUnlocked) {
+                                // 情况 A：首次解锁该物品触发隐藏成就！
+                                item.isUnlocked = true;
+                                item.unlockTime = System.currentTimeMillis();
+                                item.highestScore = finalScore;
+                                item.bestImagePath = currentImagePath;
+                                item.lastReviewedTime = System.currentTimeMillis();
+
+                                dao.updateShowcaseItem(item);
+                                android.util.Log.d("VISION_DEBUG", "🔓 恭喜！首次解锁展品: " + targetWord);
+
+                                // TODO: 之后我们可以在这里用 runOnUiThread 弹出一个酷炫的“解锁成功”对话框
+                            } else {
+                                // 情况 B：物品之前已经解锁过了
+                                item.lastReviewedTime = System.currentTimeMillis(); // 更新时间，清除“蒙尘”状态
+
+                                if (finalScore > item.highestScore) {
+                                    // 刷新了历史最高分！替换最美截图！
+                                    item.highestScore = finalScore;
+                                    if (currentImagePath != null) {
+                                        item.bestImagePath = currentImagePath;
+                                    }
+                                    android.util.Log.d("VISION_DEBUG", "🏆 展品 [" + targetWord + "] 打破最高分纪录！");
+                                } else {
+                                    android.util.Log.d("VISION_DEBUG", "✨ 展品 [" + targetWord + "] 成功复习并擦亮！");
+                                }
+
+                                dao.updateShowcaseItem(item);
+                            }
+                        } else {
+                            // 如果查不到，说明这个词不在我们的“官方收集图鉴”里，只记流水即可
+                            android.util.Log.d("VISION_DEBUG", "ℹ️ 单词 [" + targetWord + "] 属于额外词汇，不计入官方展柜。");
+                        }
+
+                    } catch (Exception e) {
+                        android.util.Log.e("VISION_DEBUG", "❌ 数据库保存失败!!!", e);
+                    }
+                });
+
             }
         } catch (Exception e) {
             Log.e(TAG, "UI 更新异常", e);

@@ -88,7 +88,7 @@ public class Wav2Vec2Scorer {
             put("tʃ", "ch"); put("ð", "dh"); put("ɛ", "eh"); put("ɝ", "er"); put("eɪ", "ey");
             put("ɪ", "ih"); put("i", "iy"); put("dʒ", "jh"); put("ŋ", "ng"); put("oʊ", "ow");
             put("ɔɪ", "oy"); put("ʃ", "sh"); put("θ", "th"); put("ʊ", "uh"); put("u", "uw");
-            put("ʒ", "zh"); put("ɹ", "r"); put("ɔ", "ao"); put("h", "hh"); put("j", "y");
+            put("ʒ", "zh"); put("ɹ", "r"); put("ɔ", "ao"); put("h", "hh"); put("j", "y");put("ɜɹ", "er");
         }};
 
         return ipaToArpabet.containsKey(s) ? ipaToArpabet.get(s) : s;
@@ -194,8 +194,31 @@ public class Wav2Vec2Scorer {
 
     private List<String> splitPhonemeString(String s) {
         s = s.toLowerCase().replaceAll("\\d", "").trim();
+        // 1. 如果带有空格，直接按空格安全拆分
         if (s.contains(" ")) return Arrays.asList(s.split("\\s+"));
-        return Arrays.asList(s.split("(?<=.)"));
+
+        // 2. 如果没有空格，进行智能拆分，保护双元音和破擦音
+        List<String> result = new ArrayList<>();
+        int i = 0;
+        while (i < s.length()) {
+            // 检查当前字符和下一个字符是否组成已知的双字符音素
+            if (i + 1 < s.length()) {
+                String twoChar = s.substring(i, i + 2);
+                // 包含常见的双元音、破擦音，以及卷舌音
+                if (twoChar.equals("aʊ") || twoChar.equals("aɪ") || twoChar.equals("eɪ") ||
+                        twoChar.equals("oʊ") || twoChar.equals("ɔɪ") || twoChar.equals("tʃ") ||
+                        twoChar.equals("dʒ") || twoChar.equals("ɜɹ")) {
+
+                    result.add(twoChar);
+                    i += 2; // 指针跳过这两个字符
+                    continue;
+                }
+            }
+            // 不是双字符音素，按单字符处理
+            result.add(String.valueOf(s.charAt(i)));
+            i++;
+        }
+        return result;
     }
 
     private void copyAssetToFile(Context c, String a, File d) throws IOException {

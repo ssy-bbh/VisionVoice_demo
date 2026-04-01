@@ -75,4 +75,8 @@ dependencies {
     androidTestImplementation(libs.espresso.core)
     // 网络请求 OkHttp
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    val room_version = "2.6.1"
+    implementation("androidx.room:room-runtime:$room_version")
+    annotationProcessor("androidx.room:room-compiler:$room_version")
+    annotationProcessor("androidx.room:room-compiler:$room_version")
 }

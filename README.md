@@ -43,6 +43,15 @@
 
 ---
 
+## 📐 架构文档
+
+| 文档 | 说明 |
+|------|------|
+| [docs/architecture/SAD.md](docs/architecture/SAD.md) | **软件架构设计文档**（基于 IEEE 1471 / 4+1 视图）|
+| [docs/architecture/adr/](docs/architecture/adr/) | **架构决策记录**（ADR）索引 |
+
+---
+
 ## 文档
 
 | 文档 | 说明 |

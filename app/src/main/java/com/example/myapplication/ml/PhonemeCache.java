@@ -52,13 +52,20 @@ public class PhonemeCache {
      * 优先级：运行时缓存 > CMU Dict
      * 未找到返回 null
      */
+    /**
+     * 获取单词或词组的音素字符串（如 "coffee cup" -> 拼接两个词的音素）
+     * 优先级：运行时缓存 > CMU Dict
+     * 未找到返回 null
+     */
     public String get(String word) {
-        String key = normalize(word);
-        // 1. 运行时缓存（phonemizer，最准确）
-        String cached = runtimeCache.optString(key, null);
-        if (cached != null) return cached;
+        String normalizedInput = normalize(word);
+        if (normalizedInput.isEmpty()) return null;
 
-        // 【新增】2. 如果 CMU 词典还没加载完，最多耐心等待 3 秒钟
+        // 1. 按空格切分，应对 "coffee cup" 这种词组
+        String[] parts = normalizedInput.split("\\s+");
+        StringBuilder combinedPhonemes = new StringBuilder();
+
+        // 2. 确保 CMU 词典已经加载完成（移到循环外，避免多次阻塞）
         if (cmuDict == null) {
             try {
                 Log.w(TAG, "⏳ CMU 词典正在加载，阻塞等待中...");
@@ -68,9 +75,32 @@ public class PhonemeCache {
             }
         }
 
-        // 3. CMU Dict（离线）
-        if (cmuDict != null) return cmuDict.get(key);
-        return null;
+        // 3. 遍历词组中的每一个单词去查字典
+        for (String part : parts) {
+            String partPhonemes = null;
+
+            // 优先查运行时缓存（phonemizer，最准确）
+            partPhonemes = runtimeCache.optString(part, null);
+
+            // 如果缓存没有，查 CMU Dict（离线）
+            if (partPhonemes == null && cmuDict != null) {
+                partPhonemes = cmuDict.get(part);
+            }
+
+            // 拼接到最终结果中
+            if (partPhonemes != null) {
+                combinedPhonemes.append(partPhonemes);
+            } else {
+                Log.e(TAG, "❌ 离线字典里找不到单词: " + part);
+            }
+        }
+
+        // 如果全部都没查到，返回 null
+        if (combinedPhonemes.length() == 0) {
+            return null;
+        }
+
+        return combinedPhonemes.toString();
     }
 
     /**

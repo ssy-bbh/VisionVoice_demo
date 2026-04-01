@@ -35,6 +35,8 @@
         android:layout_width="48dp"
         android:layout_height="48dp"
         android:src="@android:drawable/ic_menu_close_clear_cancel"
+        android:elevation="10dp"
+        android:translationZ="10dp"
         android:background="?selectableItemBackgroundBorderless"
         app:tint="@color/white"
         app:layout_constraintStart_toStartOf="parent"
