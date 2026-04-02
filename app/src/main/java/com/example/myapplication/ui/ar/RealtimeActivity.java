@@ -43,7 +43,6 @@ public class RealtimeActivity extends AppCompatActivity {
 
     private PreviewView previewView;
     private TextView resultTextView;
-    // private ExtendedFloatingActionButton confirmButton; // 已移除：点击框直接跳转，不再需要确认按钮
     private OverlayView overlayView;
     private ExecutorService cameraExecutor;
 
@@ -59,11 +58,9 @@ public class RealtimeActivity extends AppCompatActivity {
 
         // 1. 初始化视图
         previewView = findViewById(R.id.viewFinder);
-        // 强制使用 TextureView 模式，避免 SurfaceView 遮挡 OverlayView
         previewView.setImplementationMode(PreviewView.ImplementationMode.COMPATIBLE);
 
         resultTextView = findViewById(R.id.result_text_view);
-        // confirmButton = findViewById(R.id.btn_confirm); // 已移除
         overlayView = findViewById(R.id.overlayView);
 
         // 2. 检查 OverlayView 是否正常加载
@@ -75,15 +72,12 @@ public class RealtimeActivity extends AppCompatActivity {
         }
 
         ImageButton btnClose = findViewById(R.id.btnClose);
-        //隔离ui线程和物理线程
         cameraExecutor = Executors.newSingleThreadExecutor();
 
         // 3. 初始化 YOLO
-        // 请确保 assets 目录下有 yolov8n.tflite 和 labels.txt
         yoloDetector = new YoloDetector(this, "yolov8n.tflite", "labels.txt", 640, 4);
 
         // 4. 【核心交互】设置点击绿框的回调
-        // 当用户点击屏幕上的绿框时，会执行这里的代码
         if (overlayView != null) {
             overlayView.setOnBoxClickListener(result -> {
                 isResultLocked = true;
@@ -92,21 +86,30 @@ public class RealtimeActivity extends AppCompatActivity {
                 Intent intent = new Intent(RealtimeActivity.this, PracticeActivity.class);
                 intent.putExtra("extra_word", detectedWord);
 
-                // 将 latestBitmap 保存到缓存并传递路径
                 if (latestBitmap != null) {
-                    String imagePath = getCacheDir() + "/temp_ar_image.jpg";
-                    try {
-                        java.io.FileOutputStream out = new java.io.FileOutputStream(imagePath);
-                        latestBitmap.compress(Bitmap.CompressFormat.JPEG, 90, out);
-                        out.flush();
-                        out.close();
-                        intent.putExtra("extra_image_path", imagePath); // 传递文件路径
-                    } catch (Exception e) {
-                        Log.e(TAG, "保存AR截帧失败", e);
-                    }
-                }
+                    // 🚨 核心优化：将耗时的压缩存图操作放到后台线程执行
+                    cameraExecutor.execute(() -> {
+                        String fileName = "/ar_capture_" + System.currentTimeMillis() + ".jpg";
+                        String imagePath = getFilesDir() + fileName;
 
-                startActivity(intent);
+                        try {
+                            java.io.FileOutputStream out = new java.io.FileOutputStream(imagePath);
+                            // 耗时操作：图片压缩
+                            latestBitmap.compress(Bitmap.CompressFormat.JPEG, 90, out);
+                            out.flush();
+                            out.close();
+                            intent.putExtra("extra_image_path", imagePath);
+                        } catch (Exception e) {
+                            Log.e(TAG, "保存AR截帧失败", e);
+                        }
+
+                        // 🚨 存图完成后，切回主线程进行跳转
+                        runOnUiThread(() -> startActivity(intent));
+                    });
+                } else {
+                    // 如果因为某种原因没拿到图，直接跳，不卡流程
+                    startActivity(intent);
+                }
             });
         }
 
@@ -122,13 +125,10 @@ public class RealtimeActivity extends AppCompatActivity {
         }
     }
 
-    /**
-     * 页面恢复时，重新开始扫描
-     */
     @Override
     protected void onResume() {
         super.onResume();
-        isResultLocked = false; // 解锁，继续识别
+        isResultLocked = false;
         if (resultTextView != null) {
             resultTextView.setText("Scanning...");
         }
@@ -141,24 +141,18 @@ public class RealtimeActivity extends AppCompatActivity {
             try {
                 ProcessCameraProvider cameraProvider = cameraProviderFuture.get();
 
-                // =========================================================
-                // 【核心配置】使用 ResolutionSelector 请求 16:9 画面
-                // =========================================================
                 ResolutionSelector resolutionSelector = new ResolutionSelector.Builder()
                         .setAspectRatioStrategy(AspectRatioStrategy.RATIO_16_9_FALLBACK_AUTO_STRATEGY)
                         .build();
 
-                // 1. 预览配置
                 Preview preview = new Preview.Builder()
                         .setResolutionSelector(resolutionSelector)
                         .build();
 
                 preview.setSurfaceProvider(previewView.getSurfaceProvider());
 
-                // 2. 分析器配置
                 ImageAnalysis imageAnalysis = new ImageAnalysis.Builder()
                         .setResolutionSelector(resolutionSelector)
-                        //永远只给最新的一帧给模型，避免了帧堆积导致的问题
                         .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                         .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
                         .build();
@@ -178,47 +172,26 @@ public class RealtimeActivity extends AppCompatActivity {
                             bitmap = Bitmap.createBitmap(bitmap, 0, 0, bitmap.getWidth(), bitmap.getHeight(), matrix, true);
                         }
 
-                        latestBitmap = bitmap; // 核心：在这里把旋转好的最新图片保存下来
+                        latestBitmap = bitmap;
 
-                        // 【YOLO 识别】
                         List<YoloDetector.Result> results = yoloDetector.detect(bitmap);
 
-                        // 【UI 更新】
                         runOnUiThread(() -> {
                             if (results != null && !results.isEmpty()) {
-                                // 只取第一名 (Top 1)
-                                /* YoloDetector.Result best = results.get(0);
-
-
-                                // 构造单元素列表传给 OverlayView
-                                List<YoloDetector.Result> topOneList = new ArrayList<>();
-                                topOneList.add(best);
-
-                                if (overlayView != null) {
-                                    overlayView.setResults(topOneList);
-                                }
-
-
-                                // 更新底部文字
-                                String labelText = best.getLabel() + String.format(" %.0f%%", best.getScore() * 100);
-                                resultTextView.setText(labelText); */
-                                // 【修改点】：保留最多 3 个框，而不是只保留 1 个
                                 List<YoloDetector.Result> topResults = new ArrayList<>();
                                 for (int i = 0; i < Math.min(3, results.size()); i++) {
                                     topResults.add(results.get(i));
                                 }
 
                                 if (overlayView != null) {
-                                    overlayView.setResults(topResults); // 把列表传给 UI 绘制红绿框
+                                    overlayView.setResults(topResults);
                                 }
 
-                                // 底部文字仍然只显示置信度最高（第一名）的那个单词
                                 YoloDetector.Result best = topResults.get(0);
                                 String labelText = best.getLabel() + String.format(" %.0f%%", best.getScore() * 100);
                                 resultTextView.setText(labelText);
 
                             } else {
-                                // 没有识别到物体
                                 if (overlayView != null) {
                                     overlayView.setResults(new ArrayList<>());
                                 }
@@ -229,7 +202,6 @@ public class RealtimeActivity extends AppCompatActivity {
                     } catch (Exception e) {
                         Log.e(TAG, "Analysis error", e);
                     } finally {
-                        // 必须关闭，否则相机卡死
                         imageProxy.close();
                     }
                 });

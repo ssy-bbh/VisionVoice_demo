@@ -1,103 +1,182 @@
-package com.example.myapplication.ui.collection;
+package com.example.myapplication.ui.collection
 
-import android.graphics.Color;
-import android.graphics.drawable.ColorDrawable;
-import android.net.Uri;
-import android.os.Build;
-import android.os.Bundle;
-import android.view.LayoutInflater;
-import android.view.View;
-import android.view.ViewGroup;
-import android.view.Window;
-import android.view.WindowManager;
-import android.widget.ImageView;
-import android.widget.TextView;
+import android.graphics.Color
+import android.graphics.RenderEffect
+import android.graphics.drawable.ColorDrawable
+import android.net.Uri
+import android.os.Build
+import android.os.Bundle
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
+import android.view.WindowManager
+import android.widget.ImageView
+import android.widget.TextView
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.fragment.app.DialogFragment
+import androidx.lifecycle.lifecycleScope
+import com.example.myapplication.R
+import com.example.myapplication.data.AppDatabase // 🚨 请确保导入了你的数据库类
+import com.example.myapplication.utils.GyroscopeHelper
+import com.example.myapplication.utils.ShaderManager
+import com.example.myapplication.utils.StorageHelper // 🚨 导入我们刚才写的存储引擎
+import kotlinx.coroutines.launch
+import java.io.File
 
-import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
-import androidx.fragment.app.DialogFragment;
+class ShowcaseDetailDialog : DialogFragment() {
 
-import com.example.myapplication.R;
+    private var word: String? = null
+    private var imagePath: String? = null
+    private var score: Int = 0
 
-import java.io.File;
+    private var gyroHelper: GyroscopeHelper? = null
+    private var initialPitch: Float? = null
+    private var initialRoll: Float? = null
 
-public class ShowcaseDetailDialog extends DialogFragment {
+    // 🚨 核心战线 1：注册系统级相册选择器 (极简无权限申请模式)
+    private val pickMedia = registerForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null && word != null) {
+            // 拿到相册图片了！启动协程丢给引擎去覆盖！
+            lifecycleScope.launch {
+                // TODO: 🚨 这里请替换为你项目中实际获取 AppDao 的方法
+                val appDao = AppDatabase.getInstance(requireContext()).appDao()
 
-    private String word;
-    private String imagePath;
-    private int score;
+                val savedPath = StorageHelper.saveAndOverwriteImage(
+                    context = requireContext(),
+                    targetWord = word!!,
+                    bitmap = null,
+                    uri = uri, // 传相册拿到的 Uri
+                    appDao = appDao
+                )
 
-    public static ShowcaseDetailDialog newInstance(String word, String imagePath, int score) {
-        ShowcaseDetailDialog dialog = new ShowcaseDetailDialog();
-        Bundle args = new Bundle();
-        args.putString("WORD", word);
-        args.putString("IMAGE", imagePath);
-        args.putInt("SCORE", score);
-        dialog.setArguments(args);
-        return dialog;
-    }
-
-    @Override
-    public void onCreate(@Nullable Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
-        // 【修改点】去掉全屏主题，使用默认透明主题，这样才能悬浮
-        setStyle(DialogFragment.STYLE_NORMAL, android.R.style.Theme_Translucent_NoTitleBar);
-        if (getArguments() != null) {
-            word = getArguments().getString("WORD");
-            imagePath = getArguments().getString("IMAGE");
-            score = getArguments().getInt("SCORE");
-        }
-    }
-
-    @Nullable
-    @Override
-    public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container, @Nullable Bundle savedInstanceState) {
-        View view = inflater.inflate(R.layout.dialog_showcase_detail, container, false);
-
-        // 点击透明空白处关闭弹窗
-        view.findViewById(R.id.rootContainer).setOnClickListener(v -> dismiss());
-
-        TextView tvWord = view.findViewById(R.id.tvDetailWord);
-        TextView tvScore = view.findViewById(R.id.tvDetailScore);
-        ImageView ivPhoto = view.findViewById(R.id.ivDetailPhoto);
-
-        tvWord.setText(word.substring(0, 1).toUpperCase() + word.substring(1));
-        tvScore.setText(score + "%");
-
-        if (imagePath != null && !imagePath.isEmpty()) {
-            try {
-                if (imagePath.startsWith("content://") || imagePath.startsWith("file://")) {
-                    ivPhoto.setImageURI(Uri.parse(imagePath));
-                } else {
-                    File imgFile = new File(imagePath);
-                    if (imgFile.exists()) ivPhoto.setImageURI(Uri.fromFile(imgFile));
+                if (savedPath != null) {
+                    // 覆盖成功！立刻刷新当前界面的图片
+                    val ivPhoto = view?.findViewById<ImageView>(R.id.ivDetailPhoto)
+                    ivPhoto?.setImageURI(Uri.parse(savedPath))
                 }
-            } catch (Exception e) {
-                e.printStackTrace();
             }
         }
-
-        return view;
     }
 
-    @Override
-    public void onStart() {
-        super.onStart();
-        Window window = getDialog() != null ? getDialog().getWindow() : null;
-        if (window != null) {
-            // 设置窗口本身宽高填满，靠内部的 Padding 挤压出悬浮效果
-            window.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
-            window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+    companion object {
+        fun newInstance(word: String, imagePath: String, score: Int): ShowcaseDetailDialog {
+            val dialog = ShowcaseDetailDialog()
+            val args = Bundle().apply {
+                putString("WORD", word)
+                putString("IMAGE", imagePath)
+                putInt("SCORE", score)
+            }
+            dialog.arguments = args
+            return dialog
+        }
+    }
 
-            // 实时模糊背后的界面（展示柜界面）
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                window.addFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND);
-                window.getAttributes().setBlurBehindRadius(40); // 背景模糊半径
-                window.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
-            } else {
-                window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
-                window.setDimAmount(0.6f);
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setStyle(STYLE_NORMAL, android.R.style.Theme_Translucent_NoTitleBar)
+        arguments?.let {
+            word = it.getString("WORD")
+            imagePath = it.getString("IMAGE")
+            score = it.getInt("SCORE")
+        }
+    }
+
+    override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View? {
+        val view = inflater.inflate(R.layout.dialog_showcase_detail, container, false)
+        view.findViewById<View>(R.id.rootContainer).setOnClickListener { dismiss() }
+
+        val tvWord = view.findViewById<TextView>(R.id.tvDetailWord)
+        val tvScore = view.findViewById<TextView>(R.id.tvDetailScore)
+        val ivPhoto = view.findViewById<ImageView>(R.id.ivDetailPhoto)
+        val cardContainer = view.findViewById<View>(R.id.cardContainer)
+
+        // 🚨 核心战线 2：给图片加上长按事件，呼出相册！
+        ivPhoto.setOnLongClickListener {
+            pickMedia.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+            true // 返回 true 表示我们消费了这个长按事件
+        }
+
+        word?.let { if (it.isNotEmpty()) tvWord.text = it.substring(0, 1).uppercase() + it.substring(1) }
+        tvScore.text = "$score%"
+
+        if (!imagePath.isNullOrEmpty()) {
+            try {
+                if (imagePath!!.startsWith("content://") || imagePath!!.startsWith("file://")) {
+                    ivPhoto.setImageURI(Uri.parse(imagePath))
+                } else {
+                    val imgFile = File(imagePath!!)
+                    if (imgFile.exists()) ivPhoto.setImageURI(Uri.fromFile(imgFile))
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
             }
         }
+
+        // 硬件层离屏纹理缓存
+        ivPhoto.setLayerType(View.LAYER_TYPE_HARDWARE, null)
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            val shader = ShaderManager.createNewLaserShader()
+            shader.setFloatUniform("uFresnelPower", 1.0f)
+            cardContainer.cameraDistance = 8000f * resources.displayMetrics.density
+
+            gyroHelper = GyroscopeHelper(requireContext()) { pitch, roll ->
+                if (initialPitch == null) initialPitch = pitch
+                if (initialRoll == null) initialRoll = roll
+
+                val deltaPitch = pitch - initialPitch!!
+                val deltaRoll = roll - initialRoll!!
+
+                val clampedPitch = (deltaPitch * 1.5f).coerceIn(-1.0f, 1.0f)
+                val clampedRoll = (deltaRoll * 1.5f).coerceIn(-1.0f, 1.0f)
+
+                shader.setFloatUniform("uGyroOffset", clampedPitch, clampedRoll)
+                cardContainer.rotationX = clampedPitch * 15f
+                cardContainer.rotationY = clampedRoll * -15f
+                ivPhoto.setRenderEffect(RenderEffect.createRuntimeShaderEffect(shader, "uBaseMap"))
+            }
+        }
+
+        // 入场动画
+        cardContainer.alpha = 0f
+        cardContainer.scaleX = 0.7f
+        cardContainer.scaleY = 0.7f
+
+        cardContainer.animate()
+            .alpha(1f)
+            .scaleX(1f)
+            .scaleY(1f)
+            .setDuration(450)
+            .setInterpolator(android.view.animation.OvershootInterpolator(1.2f))
+            .start()
+
+        return view
+    }
+
+    override fun onStart() {
+        super.onStart()
+        dialog?.window?.apply {
+            setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+            setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                addFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
+                attributes.blurBehindRadius = 40
+                clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+            } else {
+                addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+                setDimAmount(0.6f)
+            }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        gyroHelper?.start()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        gyroHelper?.stop()
     }
 }

@@ -50,6 +50,7 @@ public class PracticeActivity extends AppCompatActivity {
     private static final int REQUEST_RECORD_AUDIO_PERMISSION = 200;
     private static final String SERVER_URL = "http://127.0.0.1:8000/evaluate_pronunciation/";
     private TextView tvFeedbackText;
+
     // ===== 视图 =====
     private TextToSpeech textToSpeech;
     private BottomSheetBehavior<View> bottomSheetBehavior;
@@ -69,9 +70,10 @@ public class PracticeActivity extends AppCompatActivity {
     // ===== 端侧模型 =====
     private Wav2Vec2Scorer wav2Vec2Scorer;
     private PhonemeCache phonemeCache;
-    private boolean isOfflineMode = false;
+    // 🚨 核心设定：默认开启端侧离线模型
+    private boolean isOfflineMode = true;
     private boolean isModelReady = false;
-    private String cachedPhonemeStr = null; // 当前单词的音素字符串
+    private String cachedPhonemeStr = null;
 
     // ===== 网络 =====
     private final OkHttpClient client = new OkHttpClient();
@@ -81,7 +83,8 @@ public class PracticeActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_practice);
         tvFeedbackText = findViewById(R.id.tvFeedbackText);
-            // 初始化视图
+
+        // 初始化视图
         tvWord      = findViewById(R.id.tvTargetWord);
         rippleView  = findViewById(R.id.viewRipple);
         llPhonemeContainer = findViewById(R.id.llPhonemeContainer);
@@ -100,8 +103,8 @@ public class PracticeActivity extends AppCompatActivity {
         targetWord = getIntent().getStringExtra("extra_word");
         if (targetWord == null) targetWord = "apple";
         tvWord.setText(targetWord);
-        currentImagePath = getIntent().getStringExtra("extra_image_path");
-        // 获取音标：PhonemeCache.get() 已整合运行时缓存 + CMU Dict，直接调用
+
+        // 获取音标
         TextView tvPhonetic = findViewById(R.id.tvPhonetic);
         String phonemes = phonemeCache.get(targetWord);
         if (phonemes != null) {
@@ -111,23 +114,46 @@ public class PracticeActivity extends AppCompatActivity {
         } else {
             tvPhonetic.setText("加载中...");
         }
-        fetchPhonetics(targetWord); // 后台请求后端，更新为 phonemizer 结果并写入缓存
+        fetchPhonetics(targetWord);
 
-        // ... 在 findViewById 之后 ...
+        // 🚨 核心修复：处理 AR 截帧路径 和 相册上传 Uri
         ImageView ivTargetImage = findViewById(R.id.ivTargetImage);
+        currentImagePath = getIntent().getStringExtra("extra_image_path");
+        android.net.Uri imageUri = getIntent().getData();
 
-// 1. 获取 Intent 传来的图片数据
-        String imagePath = getIntent().getStringExtra("extra_image_path"); // 接收实时画面截图
-        android.net.Uri imageUri = getIntent().getData(); // 接收相册 URI（注意这里改用 getData 了）
-
-// 2. 加载图片并清除灰色 Tint
         if (imageUri != null) {
             ivTargetImage.setImageURI(imageUri);
-            ivTargetImage.setImageTintList(null); // 核心：移除灰色遮罩
-        } else if (imagePath != null) {
-            ivTargetImage.setImageBitmap(android.graphics.BitmapFactory.decodeFile(imagePath));
-            ivTargetImage.setImageTintList(null); // 核心：移除灰色遮罩
+            ivTargetImage.setImageTintList(null);
+
+            // 🚨 将相册图偷偷拷贝进沙盒，转为永久绝对路径
+            AppDatabase.databaseWriteExecutor.execute(() -> {
+                try {
+                    String fileName = "/album_capture_" + System.currentTimeMillis() + ".jpg";
+                    File newFile = new File(getFilesDir(), fileName);
+                    java.io.InputStream inputStream = getContentResolver().openInputStream(imageUri);
+                    if (inputStream != null) {
+                        java.io.FileOutputStream outputStream = new java.io.FileOutputStream(newFile);
+                        byte[] buffer = new byte[1024];
+                        int length;
+                        while ((length = inputStream.read(buffer)) > 0) {
+                            outputStream.write(buffer, 0, length);
+                        }
+                        outputStream.close();
+                        inputStream.close();
+                        // 赋予永久路径，供下方写入数据库使用
+                        currentImagePath = newFile.getAbsolutePath();
+                        Log.d("VISION_DEBUG", "相册URI已转换为永久本地文件: " + currentImagePath);
+                    }
+                } catch (Exception e) {
+                    Log.e("VISION_DEBUG", "转换相册URI失败", e);
+                }
+            });
+
+        } else if (currentImagePath != null) {
+            ivTargetImage.setImageBitmap(android.graphics.BitmapFactory.decodeFile(currentImagePath));
+            ivTargetImage.setImageTintList(null);
         }
+
         // TTS
         textToSpeech = new TextToSpeech(this, status -> {
             if (status == TextToSpeech.SUCCESS) {
@@ -154,27 +180,29 @@ public class PracticeActivity extends AppCompatActivity {
         findViewById(R.id.btnClosePractice).setOnClickListener(v -> finish());
 
         // ===== 离线模式开关 =====
-        // ===== 离线模式开关 =====
-        // 初始禁用，模型就绪后才能拨动
-        switchOffline.setEnabled(false);
-        switchOffline.setChecked(false);
-        updateModeLabel(false);
+        switchOffline.setEnabled(false); // 加载完之前不可拨动
+        switchOffline.setChecked(true);  // 默认开启
+        updateModeLabel(true);
         switchOffline.setOnCheckedChangeListener((btn, isChecked) -> {
             isOfflineMode = isChecked;
             updateModeLabel(isChecked);
         });
 
-        // 后台预加载模型，加载完成才解锁开关
+        // 后台预加载模型
         preloadModelAsync();
     }
 
     // ===== 离线模式 UI =====
-
     private void updateModeLabel(boolean offline) {
         if (tvModeLabel == null) return;
         if (offline) {
-            tvModeLabel.setText("🔒 离线模式");
-            tvModeLabel.setTextColor(ContextCompat.getColor(this, R.color.success_green));
+            if (isModelReady) {
+                tvModeLabel.setText("🔒 离线模式 (已就绪)");
+                tvModeLabel.setTextColor(ContextCompat.getColor(this, R.color.success_green));
+            } else {
+                tvModeLabel.setText("🔒 离线模式 (模型加载中...)");
+                tvModeLabel.setTextColor(ContextCompat.getColor(this, R.color.text_secondary));
+            }
         } else {
             tvModeLabel.setText("☁️ 在线模式");
             tvModeLabel.setTextColor(ContextCompat.getColor(this, R.color.brand_blue));
@@ -182,29 +210,21 @@ public class PracticeActivity extends AppCompatActivity {
     }
 
     // ===== 模型加载 =====
-
-    /** 后台静默预加载，不影响 UI */
     private void preloadModelAsync() {
         new Thread(() -> {
             try {
                 Log.i(TAG, "后台预加载 Wav2Vec2 模型...");
-                runOnUiThread(() -> {
-                    tvModeLabel.setText("☁️ 在线模式（加载中...）");
-                    tvModeLabel.setTextColor(ContextCompat.getColor(this, R.color.text_secondary));
-                });
 
                 wav2Vec2Scorer = new Wav2Vec2Scorer(this);
                 isModelReady = true;
 
                 Log.i(TAG, "✅ 模型预加载完成");
                 runOnUiThread(() -> {
-                    switchOffline.setEnabled(true);  // ✅ 解锁开关
-                    tvModeLabel.setText("☁️ 在线模式（离线可用）");
-                    tvModeLabel.setTextColor(ContextCompat.getColor(this, R.color.brand_blue));
-                    // 如果音标还是"加载中..."，说明后端也没返回，用缓存或占位符
+                    switchOffline.setEnabled(true);
+                    updateModeLabel(isOfflineMode);
+
                     TextView tvPhonetic = findViewById(R.id.tvPhonetic);
                     if ("加载中...".equals(tvPhonetic.getText().toString())) {
-                        // CMU Dict 后台加载完成后再查一次
                         String p = phonemeCache.get(targetWord);
                         if (p != null) {
                             cachedPhonemeStr = p;
@@ -217,16 +237,18 @@ public class PracticeActivity extends AppCompatActivity {
             } catch (Exception e) {
                 Log.e(TAG, "模型预加载失败", e);
                 runOnUiThread(() -> {
-                    switchOffline.setEnabled(false);  // 加载失败，保持禁用
-                    tvModeLabel.setText("☁️ 在线模式（离线不可用）");
-                    tvModeLabel.setTextColor(ContextCompat.getColor(this, R.color.error_red));
+                    // 模型加载失败时自动降级到在线模式
+                    isOfflineMode = false;
+                    switchOffline.setChecked(false);
+                    switchOffline.setEnabled(true);
+                    Toast.makeText(this, "本地模型加载失败，已切换至在线模式", Toast.LENGTH_SHORT).show();
+                    updateModeLabel(false);
                 });
             }
         }).start();
     }
 
     // ===== 录音逻辑 =====
-
     private void handleRecordClick() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
                 != PackageManager.PERMISSION_GRANTED) {
@@ -270,7 +292,6 @@ public class PracticeActivity extends AppCompatActivity {
     }
 
     private void stopRecordingAndEvaluate() {
-        // 停止录音
         if (mediaRecorder != null) {
             try { mediaRecorder.stop(); } catch (RuntimeException ignored) {}
             mediaRecorder.release();
@@ -279,7 +300,6 @@ public class PracticeActivity extends AppCompatActivity {
 
         File audioFile = new File(audioFilePath);
 
-        // 根据模式选择评估方式
         if (isOfflineMode && isModelReady) {
             evaluateOnDevice(targetWord, audioFile);
         } else {
@@ -296,39 +316,29 @@ public class PracticeActivity extends AppCompatActivity {
     }
 
     // ===== 端侧评估 =====
-
     private void evaluateOnDevice(String word, File audioFile) {
         new Thread(() -> {
             try {
                 Log.i(TAG, "🔒 端侧评估开始：" + word);
                 long t0 = System.currentTimeMillis();
 
-                // 1. 加载音频
                 float[] audioData = AudioProcessor.loadAndPreprocess(audioFile);
-                Log.d(TAG, "音频加载完成：" + audioData.length + " 采样点");
 
-                // 2. 静音检测
                 if (AudioProcessor.isSilent(audioData)) {
                     runOnUiThread(() ->
                             Toast.makeText(this, "⚠️ 未检测到声音，请靠近麦克风重试", Toast.LENGTH_SHORT).show());
                     return;
                 }
 
-                // 3. 标准音素：直接从 PhonemeCache 取（已整合运行时缓存 + CMU Dict）
                 String refPhonemes = phonemeCache.get(word);
                 if (refPhonemes == null || refPhonemes.isEmpty()) {
                     runOnUiThread(() ->
                             Toast.makeText(this, "⚠️ 该词音素未收录，请联网后重试", Toast.LENGTH_SHORT).show());
                     return;
                 }
-                Log.d(TAG, "标准音素：" + refPhonemes);
 
-                // 4. 端侧评分（传入音素字符串）
                 Wav2Vec2Scorer.PronunciationScore result = wav2Vec2Scorer.score(refPhonemes, audioData);
-                long elapsed = System.currentTimeMillis() - t0;
-                Log.i(TAG, "✅ 端侧评估完成，得分=" + result.score + "，耗时=" + elapsed + "ms");
 
-                // 3. 转换为 UI 所需格式
                 JSONArray refArr  = new JSONArray();
                 JSONArray userArr = new JSONArray();
                 JSONArray fbArr   = new JSONArray();
@@ -344,11 +354,9 @@ public class PracticeActivity extends AppCompatActivity {
                     fbArr.put(i < fbs.size()     ? fbs.get(i)   : "Deletion");
                 }
 
-                // 4. 更新 UI
                 runOnUiThread(() -> {
                     updateUIWithFeedback(refArr, userArr, fbArr);
                     bottomSheetBehavior.setState(BottomSheetBehavior.STATE_EXPANDED);
-                    // 用端侧计算的得分直接覆盖
                     tvScore.setText(result.score + "%");
                     colorScore(result.score);
                 });
@@ -366,8 +374,7 @@ public class PracticeActivity extends AppCompatActivity {
         }).start();
     }
 
-    // ===== 在线评估（原有逻辑，保持不变）=====
-
+    // ===== 在线评估 =====
     private void evaluatePronunciation(String word, File file) {
         RequestBody requestBody = new MultipartBody.Builder()
                 .setType(MultipartBody.FORM)
@@ -392,7 +399,6 @@ public class PracticeActivity extends AppCompatActivity {
                 if (response.isSuccessful() && response.body() != null) {
                     try {
                         String responseData = response.body().string();
-                        Log.d(TAG, "后端返回：" + responseData);
                         JSONObject json = new JSONObject(responseData);
                         JSONArray refPhonemes  = json.getJSONArray("reference_phonemes");
                         JSONArray userPhonemes = json.getJSONArray("user_phonemes");
@@ -413,8 +419,7 @@ public class PracticeActivity extends AppCompatActivity {
         });
     }
 
-    // ===== UI 渲染（原有逻辑，保持不变）=====
-
+    // ===== UI 渲染 & 数据库更新 =====
     private void updateUIWithFeedback(JSONArray refPhonemes, JSONArray userPhonemes, JSONArray feedback) {
         LinearLayout llContainer = findViewById(R.id.llPhonemeContainer);
         llContainer.removeAllViews();
@@ -492,26 +497,21 @@ public class PracticeActivity extends AppCompatActivity {
 
                 AppDatabase.databaseWriteExecutor.execute(() -> {
                     try {
-                        // 获取数据库操作接口 (DAO)
                         AppDao dao = AppDatabase.getInstance(PracticeActivity.this).appDao();
 
-                        // ================= 1. 记录这次练习流水 (你已经写好的) =================
                         PracticeRecord record = new PracticeRecord(
                                 targetWord,
                                 finalScore,
                                 System.currentTimeMillis(),
-                                currentImagePath
+                                currentImagePath // 如果是相册进来的，这里已经拿到转换后的本地路径了！
                         );
                         dao.insertRecord(record);
                         android.util.Log.d("VISION_DEBUG", "✅ 成功保存记录流水: " + targetWord + " 得分: " + finalScore);
 
-                        // ================= 2. 展柜解锁与“擦亮”逻辑 (新增) =================
                         ShowcaseItem item = dao.getShowcaseItemByWord(targetWord);
 
                         if (item != null) {
-                            // 说明展柜里预设了这个物品！
                             if (!item.isUnlocked) {
-                                // 情况 A：首次解锁该物品触发隐藏成就！
                                 item.isUnlocked = true;
                                 item.unlockTime = System.currentTimeMillis();
                                 item.highestScore = finalScore;
@@ -520,14 +520,10 @@ public class PracticeActivity extends AppCompatActivity {
 
                                 dao.updateShowcaseItem(item);
                                 android.util.Log.d("VISION_DEBUG", "🔓 恭喜！首次解锁展品: " + targetWord);
-
-                                // TODO: 之后我们可以在这里用 runOnUiThread 弹出一个酷炫的“解锁成功”对话框
                             } else {
-                                // 情况 B：物品之前已经解锁过了
-                                item.lastReviewedTime = System.currentTimeMillis(); // 更新时间，清除“蒙尘”状态
+                                item.lastReviewedTime = System.currentTimeMillis();
 
                                 if (finalScore > item.highestScore) {
-                                    // 刷新了历史最高分！替换最美截图！
                                     item.highestScore = finalScore;
                                     if (currentImagePath != null) {
                                         item.bestImagePath = currentImagePath;
@@ -540,7 +536,6 @@ public class PracticeActivity extends AppCompatActivity {
                                 dao.updateShowcaseItem(item);
                             }
                         } else {
-                            // 如果查不到，说明这个词不在我们的“官方收集图鉴”里，只记流水即可
                             android.util.Log.d("VISION_DEBUG", "ℹ️ 单词 [" + targetWord + "] 属于额外词汇，不计入官方展柜。");
                         }
 
@@ -558,21 +553,20 @@ public class PracticeActivity extends AppCompatActivity {
     private void colorScore(int score) {
         if (score >= 80) {
             tvScore.setTextColor(ContextCompat.getColor(this, R.color.success_green));
-            tvFeedbackText.setText("Excellent!"); // 优秀
+            tvFeedbackText.setText("Excellent!");
             tvFeedbackText.setTextColor(ContextCompat.getColor(this, R.color.success_green));
         } else if (score >= 60) {
             tvScore.setTextColor(android.graphics.Color.parseColor("#F57C00"));
-            tvFeedbackText.setText("Good Try!"); // 良好
+            tvFeedbackText.setText("Good Try!");
             tvFeedbackText.setTextColor(android.graphics.Color.parseColor("#F57C00"));
         } else {
             tvScore.setTextColor(ContextCompat.getColor(this, R.color.error_red));
-            tvFeedbackText.setText("Keep Practicing!"); // 加油
+            tvFeedbackText.setText("Keep Practicing!");
             tvFeedbackText.setTextColor(ContextCompat.getColor(this, R.color.error_red));
         }
     }
 
     // ===== 音标获取 =====
-
     private void fetchPhonetics(String word) {
         String url = "http://127.0.0.1:8000/get_phonetics/?word=" + word;
         Request request = new Request.Builder().url(url).get().build();
@@ -582,10 +576,8 @@ public class PracticeActivity extends AppCompatActivity {
                 runOnUiThread(() -> {
                     TextView tvPhonetic = findViewById(R.id.tvPhonetic);
                     if (cachedPhonemeStr != null) {
-                        // 已有缓存（本次进页面时命中），保持显示
                         tvPhonetic.setText("/" + cachedPhonemeStr + "/");
                     } else {
-                        // 完全没有缓存，显示占位符
                         tvPhonetic.setText("/.../");
                         Log.w(TAG, "后端不可用且无缓存：" + word);
                     }
@@ -597,10 +589,9 @@ public class PracticeActivity extends AppCompatActivity {
                     try {
                         JSONObject json = new JSONObject(response.body().string());
                         String phonetics = json.getString("phonetics");
-                        // 去掉斜杠存入缓存和内存
                         String phonemeStr = phonetics.replaceAll("^/|/$", "");
                         cachedPhonemeStr = phonemeStr;
-                        phonemeCache.put(word, phonemeStr); // 写入本地缓存
+                        phonemeCache.put(word, phonemeStr);
                         runOnUiThread(() -> {
                             TextView tvPhonetic = findViewById(R.id.tvPhonetic);
                             tvPhonetic.setText(phonetics);
@@ -612,8 +603,6 @@ public class PracticeActivity extends AppCompatActivity {
             }
         });
     }
-
-    // ===== 生命周期 =====
 
     @Override
     protected void onDestroy() {

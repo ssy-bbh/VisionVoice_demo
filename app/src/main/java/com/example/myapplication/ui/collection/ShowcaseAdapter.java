@@ -58,27 +58,29 @@ public class ShowcaseAdapter extends RecyclerView.Adapter<ShowcaseAdapter.Showca
 
             holder.tvObjectScore.setText(item.highestScore + "%");
 
+            // 【修复 1】：调用 Kotlin 伴生对象的方法，必须加 .Companion
             holder.itemView.setOnClickListener(v -> {
-                // 实例化我们的极客弹窗
-                ShowcaseDetailDialog dialog = ShowcaseDetailDialog.newInstance(
+                ShowcaseDetailDialog dialog = ShowcaseDetailDialog.Companion.newInstance(
                         item.targetWord,
                         item.bestImagePath,
                         item.highestScore
                 );
 
-                // 显示弹窗 (由于在 Adapter 里，需要通过 Context 强转获取 FragmentManager)
-                androidx.appcompat.app.AppCompatActivity activity = (androidx.appcompat.app.AppCompatActivity) v.getContext();
-                dialog.show(activity.getSupportFragmentManager(), "ShowcaseDetail");
+                try {
+                    androidx.appcompat.app.AppCompatActivity activity =
+                            (androidx.appcompat.app.AppCompatActivity) v.getContext();
+                    dialog.show(activity.getSupportFragmentManager(), "ShowcaseDetail");
+                } catch (ClassCastException e) {
+                    android.util.Log.e("VISION_DEBUG", "无法获取 Activity 上下文来显示弹窗");
+                }
             });
-            // 加载用户自己拍的真实照片
+
             // 加载照片：兼容 AR 实景的本地 File 和 相册的 Content URI
             if (item.bestImagePath != null && !item.bestImagePath.isEmpty()) {
                 try {
                     if (item.bestImagePath.startsWith("content://") || item.bestImagePath.startsWith("file://")) {
-                        // 1. 如果是从相册选的虚拟 URI，直接解析加载
                         holder.ivObjectPhoto.setImageURI(Uri.parse(item.bestImagePath));
                     } else {
-                        // 2. 如果是 AR 扫出来存的本地绝对路径
                         File imgFile = new File(item.bestImagePath);
                         if (imgFile.exists()) {
                             holder.ivObjectPhoto.setImageURI(Uri.fromFile(imgFile));
@@ -90,45 +92,51 @@ public class ShowcaseAdapter extends RecyclerView.Adapter<ShowcaseAdapter.Showca
                     e.printStackTrace();
                 }
             }
+
+            // 动态调整卡片高度
             ViewGroup.LayoutParams params = holder.itemView.getLayoutParams();
             params.height = (int) (260 * holder.itemView.getContext().getResources().getDisplayMetrics().density);
             holder.itemView.setLayoutParams(params);
+
             // 🌟 核心状态逻辑：蒙尘复习 vs 完美掌握
             long threeDaysInMillis = 3L * 24 * 60 * 60 * 1000;
-            boolean needsReview = (System.currentTimeMillis() - item.lastReviewedTime) > threeDaysInMillis;
+
+            // 【修复 2】：防 0 判定，解决新解锁物品瞬间变灰的 Bug
+            long validReviewTime = item.lastReviewedTime <= 0 ? System.currentTimeMillis() : item.lastReviewedTime;
+            boolean needsReview = (System.currentTimeMillis() - validReviewTime) > threeDaysInMillis;
+
+            // 【修复 3】：先清除滤镜，防止 RecyclerView 强制复用导致的 UI 状态污染
+            holder.ivObjectPhoto.clearColorFilter();
 
             if (needsReview) {
-                // 状态 A: 超过3天未复习，显示警告
+                // 状态 A: 超过3天未复习，显示警告并去色
                 holder.tvStatusBadge.setVisibility(View.VISIBLE);
                 holder.tvStatusBadge.setText("⚠️ Needs Review");
                 holder.tvStatusBadge.setTextColor(Color.parseColor("#F59E0B")); // 琥珀色
 
-                // 给图片加个去色（灰度）滤镜，营造“蒙尘”感
                 ColorMatrix matrix = new ColorMatrix();
                 matrix.setSaturation(0);
                 holder.ivObjectPhoto.setColorFilter(new ColorMatrixColorFilter(matrix));
 
             } else if (item.highestScore >= 95) {
-                // 状态 B: 刚刚测过并且大于等于95分，显示完美徽章
+                // 状态 B: 完美掌握
                 holder.tvStatusBadge.setVisibility(View.VISIBLE);
                 holder.tvStatusBadge.setText("✨ Perfect Master");
                 holder.tvStatusBadge.setTextColor(Color.parseColor("#06B6D4")); // 赛博青色
-                holder.ivObjectPhoto.clearColorFilter(); // 清除滤镜，光亮如新
-
             } else {
-                // 状态 C: 普通已解锁（不到95分）
+                // 状态 C: 普通已解锁
                 holder.tvStatusBadge.setVisibility(View.GONE);
-                holder.ivObjectPhoto.clearColorFilter();
             }
 
         } else {
             // ================== 未解锁状态 ==================
             holder.layoutLocked.setVisibility(View.VISIBLE);
-            holder.layoutTopBar.setVisibility(View.INVISIBLE); // 隐藏顶部面板
-            holder.viewScrim.setVisibility(View.GONE);         // 隐藏文字遮罩
+            holder.layoutTopBar.setVisibility(View.INVISIBLE);
+            holder.viewScrim.setVisibility(View.GONE);
 
-            holder.ivObjectPhoto.setImageURI(null); // 清空背景图
+            holder.ivObjectPhoto.setImageURI(null);
             holder.ivObjectPhoto.clearColorFilter();
+
             ViewGroup.LayoutParams params = holder.itemView.getLayoutParams();
             params.height = (int) (180 * holder.itemView.getContext().getResources().getDisplayMetrics().density);
             holder.itemView.setLayoutParams(params);
@@ -140,7 +148,6 @@ public class ShowcaseAdapter extends RecyclerView.Adapter<ShowcaseAdapter.Showca
         return items.size();
     }
 
-    // 绑定最新的 XML 控件 ID
     static class ShowcaseViewHolder extends RecyclerView.ViewHolder {
         ImageView ivObjectPhoto;
         View viewScrim;

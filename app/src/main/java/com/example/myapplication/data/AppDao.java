@@ -18,7 +18,7 @@ public interface AppDao {
     @Insert
     void insertShowcaseItems(List<ShowcaseItem> items);
 
-    @Query("SELECT * FROM showcase_items")
+    @Query("SELECT * FROM showcase_items ORDER BY CASE WHEN bestImagePath IS NOT NULL AND bestImagePath != '' THEN 0 ELSE 1 END, targetWord ASC")
     List<ShowcaseItem> getAllShowcaseItems();
 
     @Query("SELECT * FROM showcase_items WHERE targetWord = :word LIMIT 1")
