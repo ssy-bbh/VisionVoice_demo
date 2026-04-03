@@ -24,6 +24,7 @@ import com.example.myapplication.data.AppDatabase;
 import com.example.myapplication.data.PracticeRecord;
 import com.example.myapplication.data.ShowcaseItem;
 import com.example.myapplication.ml.AudioProcessor;
+import com.example.myapplication.ml.ModelManager;
 import com.example.myapplication.ml.PhonemeCache;
 import com.example.myapplication.ml.Wav2Vec2Scorer;
 import com.google.android.material.bottomsheet.BottomSheetBehavior;
@@ -62,10 +63,14 @@ public class PracticeActivity extends AppCompatActivity {
     private Switch switchOffline;
 
     // ===== 录音 =====
+    // ===== 录音 =====
     private boolean isRecording = false;
     private String targetWord;
-    private MediaRecorder mediaRecorder;
-    private String audioFilePath;
+
+    // 🚨 核心改动：抛弃 MediaRecorder，使用底层 API
+    private android.media.AudioRecord audioRecord;
+    private Thread recordingThread;
+    private String audioFilePath; // 路径后缀从 .m4a 变成 .pcm
 
     // ===== 端侧模型 =====
     private Wav2Vec2Scorer wav2Vec2Scorer;
@@ -172,7 +177,8 @@ public class PracticeActivity extends AppCompatActivity {
         });
 
         // 录音路径
-        audioFilePath = getExternalCacheDir().getAbsolutePath() + "/user_record.m4a";
+        // 录音路径：从 m4a 有损格式改为 pcm 裸流格式
+        audioFilePath = getExternalCacheDir().getAbsolutePath() + "/user_record.pcm";
 
         // 按钮
         findViewById(R.id.btnRecord).setOnClickListener(v -> handleRecordClick());
@@ -211,41 +217,20 @@ public class PracticeActivity extends AppCompatActivity {
 
     // ===== 模型加载 =====
     private void preloadModelAsync() {
-        new Thread(() -> {
-            try {
-                Log.i(TAG, "后台预加载 Wav2Vec2 模型...");
+        if (ModelManager.isReady()) {
+            wav2Vec2Scorer = ModelManager.getScorer();
+            isModelReady = true;
 
-                wav2Vec2Scorer = new Wav2Vec2Scorer(this);
-                isModelReady = true;
-
-                Log.i(TAG, "✅ 模型预加载完成");
-                runOnUiThread(() -> {
-                    switchOffline.setEnabled(true);
-                    updateModeLabel(isOfflineMode);
-
-                    TextView tvPhonetic = findViewById(R.id.tvPhonetic);
-                    if ("加载中...".equals(tvPhonetic.getText().toString())) {
-                        String p = phonemeCache.get(targetWord);
-                        if (p != null) {
-                            cachedPhonemeStr = p;
-                            tvPhonetic.setText("/" + p + "/");
-                        } else {
-                            tvPhonetic.setText("/.../");
-                        }
-                    }
-                });
-            } catch (Exception e) {
-                Log.e(TAG, "模型预加载失败", e);
-                runOnUiThread(() -> {
-                    // 模型加载失败时自动降级到在线模式
-                    isOfflineMode = false;
-                    switchOffline.setChecked(false);
-                    switchOffline.setEnabled(true);
-                    Toast.makeText(this, "本地模型加载失败，已切换至在线模式", Toast.LENGTH_SHORT).show();
-                    updateModeLabel(false);
-                });
-            }
-        }).start();
+            // UI 秒切就绪状态
+            switchOffline.setEnabled(true);
+            updateModeLabel(true);
+            Log.i(TAG, "⚡ 模型秒开成功！");
+        } else {
+            // 万一用户手速极快，刚开App就扫，模型还没加载完
+            Log.w(TAG, "模型还在全局加载中，稍后重试或降级");
+            tvModeLabel.setText("🔒 离线模式 (全局加载中...)");
+            // 这里可以保留一个轮询，或者提示用户等两秒
+        }
     }
 
     // ===== 录音逻辑 =====
@@ -273,29 +258,97 @@ public class PracticeActivity extends AppCompatActivity {
         llPhonemeContainer.removeAllViews();
         tvScore.setText("--%");
         tvScore.setTextColor(ContextCompat.getColor(this, R.color.text_secondary));
-        mediaRecorder = new MediaRecorder();
-        mediaRecorder.setAudioSource(MediaRecorder.AudioSource.MIC);
-        mediaRecorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4);
-        mediaRecorder.setOutputFile(audioFilePath);
-        mediaRecorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC);
+
+        // 🚨 核心架构：配置 Wav2Vec2 的黄金参数
+        int sampleRate = 16000;
+        int channelConfig = android.media.AudioFormat.CHANNEL_IN_MONO;
+        int audioFormat = android.media.AudioFormat.ENCODING_PCM_16BIT;
+
+        // 计算底层硬件所需的最小缓冲区大小
+        int minBufferSize = android.media.AudioRecord.getMinBufferSize(sampleRate, channelConfig, audioFormat);
+        // 保险起见，分配一个更大的应用级缓冲区以防止主线程卡顿导致音频丢包
+        int bufferSize = Math.max(minBufferSize * 4, 8192);
+
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            return;
+        }
+
         try {
-            mediaRecorder.prepare();
-            mediaRecorder.start();
+            audioRecord = new android.media.AudioRecord(
+                    MediaRecorder.AudioSource.MIC,
+                    sampleRate,
+                    channelConfig,
+                    audioFormat,
+                    bufferSize
+            );
+
+            audioRecord.startRecording();
             isRecording = true;
+
+            // 启动专属后台线程进行阻塞性数据拉取
+            recordingThread = new Thread(() -> {
+                writeAudioDataToFile(bufferSize);
+            }, "AudioRecorder_Thread");
+            recordingThread.start();
+
             rippleView.setVisibility(View.VISIBLE);
             rippleView.animate().scaleX(1.5f).scaleY(1.5f).setDuration(1000).withLayer().start();
-            Toast.makeText(this, "正在录音，点击结束...", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "正在录制无损音频...", Toast.LENGTH_SHORT).show();
+
+        } catch (Exception e) {
+            Log.e(TAG, "AudioRecord 初始化失败", e);
+            Toast.makeText(this, "麦克风被占用或权限拒绝", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    // 后台线程专用的写文件循环
+    private void writeAudioDataToFile(int bufferSize) {
+        byte[] data = new byte[bufferSize];
+        java.io.FileOutputStream os = null;
+
+        try {
+            os = new java.io.FileOutputStream(audioFilePath);
+        } catch (java.io.FileNotFoundException e) {
+            Log.e(TAG, "无法创建 PCM 临时文件", e);
+            return;
+        }
+
+        // 阻塞式的 while 循环，绝不漏掉任何一个声学采样点
+        while (isRecording) {
+            int read = audioRecord.read(data, 0, bufferSize);
+            if (read > 0) {
+                try {
+                    os.write(data, 0, read);
+                } catch (IOException e) {
+                    Log.e(TAG, "PCM 写入异常", e);
+                }
+            }
+        }
+
+        try {
+            os.flush();
+            os.close();
         } catch (IOException e) {
-            Log.e(TAG, "录音准备失败", e);
-            Toast.makeText(this, "录音设备启动失败", Toast.LENGTH_SHORT).show();
+            e.printStackTrace();
         }
     }
 
     private void stopRecordingAndEvaluate() {
-        if (mediaRecorder != null) {
-            try { mediaRecorder.stop(); } catch (RuntimeException ignored) {}
-            mediaRecorder.release();
-            mediaRecorder = null;
+        isRecording = false;
+
+        // 安全地停止并释放 AudioRecord
+        if (audioRecord != null) {
+            try {
+                if (audioRecord.getRecordingState() == android.media.AudioRecord.RECORDSTATE_RECORDING) {
+                    audioRecord.stop();
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "停止录音异常", e);
+            } finally {
+                audioRecord.release();
+                audioRecord = null;
+                recordingThread = null;
+            }
         }
 
         File audioFile = new File(audioFilePath);
@@ -311,6 +364,8 @@ public class PracticeActivity extends AppCompatActivity {
                     updateModeLabel(false);
                 });
             }
+            // 注意：由于现在是纯 PCM 裸文件，如果你还要支持“在线模式”，你的后端 Python 脚本需要适配读取 raw PCM 而不是 mp4。
+            // 建议：由于我们重构了端侧体验，你可以专注于测试离线模式的提升。
             evaluatePronunciation(targetWord, audioFile);
         }
     }
@@ -507,7 +562,8 @@ public class PracticeActivity extends AppCompatActivity {
                         );
                         dao.insertRecord(record);
                         android.util.Log.d("VISION_DEBUG", "✅ 成功保存记录流水: " + targetWord + " 得分: " + finalScore);
-
+                        // 用户完成了一次发音练习！触发打卡记录！
+                        com.example.myapplication.utils.UserStatsManager.INSTANCE.recordPractice(this);
                         ShowcaseItem item = dao.getShowcaseItemByWord(targetWord);
 
                         if (item != null) {
@@ -607,16 +663,32 @@ public class PracticeActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
+
+        // 1. 释放 TTS 资源
         if (textToSpeech != null) {
             textToSpeech.stop();
             textToSpeech.shutdown();
         }
-        if (mediaRecorder != null) {
-            mediaRecorder.release();
-            mediaRecorder = null;
+
+        // 🚨 2. 核心修复：安全终止后台录音线程与释放 AudioRecord 底层硬件
+        isRecording = false; // 这一步至关重要！它能立刻打断后台线程里的 while 循环
+        if (recordingThread != null) {
+            recordingThread.interrupt();
+            recordingThread = null;
         }
-        if (wav2Vec2Scorer != null) {
-            wav2Vec2Scorer.close();
+
+        if (audioRecord != null) {
+            try {
+                if (audioRecord.getRecordingState() == android.media.AudioRecord.RECORDSTATE_RECORDING) {
+                    audioRecord.stop();
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "停止 AudioRecord 异常", e);
+            } finally {
+                audioRecord.release();
+                audioRecord = null;
+            }
         }
+
     }
 }

@@ -26,6 +26,9 @@ public class ShowcaseAdapter extends RecyclerView.Adapter<ShowcaseAdapter.Showca
 
     private List<ShowcaseItem> items = new ArrayList<>();
 
+    // 🚨 新增：记录最后一次点击的时间戳，用于全局防抖拦截
+    private long lastClickTime = 0;
+
     // 更新数据源的方法
     public void updateData(List<ShowcaseItem> newItems) {
         this.items.clear();
@@ -58,8 +61,15 @@ public class ShowcaseAdapter extends RecyclerView.Adapter<ShowcaseAdapter.Showca
 
             holder.tvObjectScore.setText(item.highestScore + "%");
 
-            // 【修复 1】：调用 Kotlin 伴生对象的方法，必须加 .Companion
+            // 🚨 核心修复：在这里加入防抖判定
             holder.itemView.setOnClickListener(v -> {
+                long currentTime = System.currentTimeMillis();
+                // 如果距离上一次点击不到 500 毫秒（半秒），直接无视这次点击！
+                if (currentTime - lastClickTime < 500) {
+                    return;
+                }
+                lastClickTime = currentTime;
+
                 ShowcaseDetailDialog dialog = ShowcaseDetailDialog.Companion.newInstance(
                         item.targetWord,
                         item.bestImagePath,
@@ -101,30 +111,27 @@ public class ShowcaseAdapter extends RecyclerView.Adapter<ShowcaseAdapter.Showca
             // 🌟 核心状态逻辑：蒙尘复习 vs 完美掌握
             long threeDaysInMillis = 3L * 24 * 60 * 60 * 1000;
 
-            // 【修复 2】：防 0 判定，解决新解锁物品瞬间变灰的 Bug
+            // 防 0 判定
             long validReviewTime = item.lastReviewedTime <= 0 ? System.currentTimeMillis() : item.lastReviewedTime;
             boolean needsReview = (System.currentTimeMillis() - validReviewTime) > threeDaysInMillis;
 
-            // 【修复 3】：先清除滤镜，防止 RecyclerView 强制复用导致的 UI 状态污染
+            // 先清除滤镜
             holder.ivObjectPhoto.clearColorFilter();
 
             if (needsReview) {
-                // 状态 A: 超过3天未复习，显示警告并去色
                 holder.tvStatusBadge.setVisibility(View.VISIBLE);
                 holder.tvStatusBadge.setText("⚠️ Needs Review");
-                holder.tvStatusBadge.setTextColor(Color.parseColor("#F59E0B")); // 琥珀色
+                holder.tvStatusBadge.setTextColor(Color.parseColor("#F59E0B"));
 
                 ColorMatrix matrix = new ColorMatrix();
                 matrix.setSaturation(0);
                 holder.ivObjectPhoto.setColorFilter(new ColorMatrixColorFilter(matrix));
 
             } else if (item.highestScore >= 95) {
-                // 状态 B: 完美掌握
                 holder.tvStatusBadge.setVisibility(View.VISIBLE);
                 holder.tvStatusBadge.setText("✨ Perfect Master");
-                holder.tvStatusBadge.setTextColor(Color.parseColor("#06B6D4")); // 赛博青色
+                holder.tvStatusBadge.setTextColor(Color.parseColor("#06B6D4"));
             } else {
-                // 状态 C: 普通已解锁
                 holder.tvStatusBadge.setVisibility(View.GONE);
             }
 

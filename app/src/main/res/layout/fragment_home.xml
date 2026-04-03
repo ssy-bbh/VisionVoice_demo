@@ -45,9 +45,10 @@
                 android:paddingHorizontal="12dp"
                 android:paddingVertical="6dp">
                 <TextView
+                    android:id="@+id/tvStreakCount"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="🔥 3 Days"
+                    android:text="🔥 0 Days"
                     android:textColor="@color/brand_orange"
                     android:textStyle="bold"/>
             </LinearLayout>
@@ -79,6 +80,7 @@
                     android:text="Find these objects today:"
                     android:textColor="@color/text_secondary"/>
                 <LinearLayout
+                    android:id="@+id/containerDailyTasks"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="16dp"

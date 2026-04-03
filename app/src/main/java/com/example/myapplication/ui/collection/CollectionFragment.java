@@ -9,8 +9,8 @@ import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
-import androidx.recyclerview.widget.GridLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
+import androidx.recyclerview.widget.StaggeredGridLayoutManager;
 
 import com.example.myapplication.R;
 import com.example.myapplication.data.AppDatabase;
@@ -29,9 +29,7 @@ public class CollectionFragment extends Fragment {
     private TextView tvCollectionStats;
     private ShowcaseAdapter adapter;
 
-    // 用来在内存中保存所有数据库里的展品，方便随时过滤
     private List<ShowcaseItem> allItems = new ArrayList<>();
-    // 用来将展品按场景分类存放
     private Map<String, List<ShowcaseItem>> categoryMap = new LinkedHashMap<>();
 
     @Nullable
@@ -48,11 +46,10 @@ public class CollectionFragment extends Fragment {
         tabLayoutCategories = view.findViewById(R.id.tabLayoutCategories);
         tvCollectionStats = view.findViewById(R.id.tvCollectionStats);
 
-        rvCollection.setLayoutManager(new androidx.recyclerview.widget.StaggeredGridLayoutManager(2, androidx.recyclerview.widget.StaggeredGridLayoutManager.VERTICAL));
+        rvCollection.setLayoutManager(new StaggeredGridLayoutManager(2, StaggeredGridLayoutManager.VERTICAL));
         adapter = new ShowcaseAdapter();
         rvCollection.setAdapter(adapter);
 
-        // 监听 Tab 点击事件，切换不同分类的展品
         tabLayoutCategories.addOnTabSelectedListener(new TabLayout.OnTabSelectedListener() {
             @Override
             public void onTabSelected(TabLayout.Tab tab) {
@@ -60,7 +57,9 @@ public class CollectionFragment extends Fragment {
                 if ("All".equals(category)) {
                     adapter.updateData(allItems);
                 } else {
-                    adapter.updateData(categoryMap.get(category));
+                    // 🚨 防崩点 1：防止 Map 返回 null 传给 Adapter 导致崩溃
+                    List<ShowcaseItem> filteredList = categoryMap.get(category);
+                    adapter.updateData(filteredList != null ? filteredList : new ArrayList<>());
                 }
             }
 
@@ -75,19 +74,30 @@ public class CollectionFragment extends Fragment {
     }
 
     private void loadDataFromDatabase() {
-        // 在后台线程查询数据库
         AppDatabase.databaseWriteExecutor.execute(() -> {
+            // 🚨 防崩点 2：避免 Fragment 被销毁时获取 Context 导致 NullPointerException
+            if (!isAdded() || getContext() == null) return;
+
             List<ShowcaseItem> dbItems = AppDatabase.getInstance(getContext()).appDao().getAllShowcaseItems();
 
-            // 回到主线程更新 UI
-            requireActivity().runOnUiThread(() -> {
-                allItems = dbItems;
+            // 🚨 防崩点 3：必须使用 getActivity() 并判空，绝不能盲目使用 requireActivity() 强杀
+            if (getActivity() == null) return;
+
+            getActivity().runOnUiThread(() -> {
+                allItems = dbItems != null ? dbItems : new ArrayList<>();
                 categoryMap.clear();
 
-                int unlockedCount = 0;
+                // 🚨 防崩点 4：空数据状态优雅拦截，直接阻断后续的空引用逻辑
+                if (allItems.isEmpty()) {
+                    tvCollectionStats.setText("Unlocked: 0 / 0 objects");
+                    tabLayoutCategories.removeAllTabs();
+                    tabLayoutCategories.addTab(tabLayoutCategories.newTab().setText("All"));
+                    adapter.updateData(new ArrayList<>());
+                    return; // 拦截成功，安全退出
+                }
 
-                // 整理数据，按 category 分组
-                for (ShowcaseItem item : dbItems) {
+                int unlockedCount = 0;
+                for (ShowcaseItem item : allItems) {
                     if (item.isUnlocked) unlockedCount++;
 
                     if (!categoryMap.containsKey(item.category)) {
@@ -96,17 +106,14 @@ public class CollectionFragment extends Fragment {
                     categoryMap.get(item.category).add(item);
                 }
 
-                // 更新统计文本
                 tvCollectionStats.setText("Unlocked: " + unlockedCount + " / " + allItems.size() + " objects");
 
-                // 动态生成 Tab 标签
                 tabLayoutCategories.removeAllTabs();
-                tabLayoutCategories.addTab(tabLayoutCategories.newTab().setText("All")); // 默认添加"全部"标签
+                tabLayoutCategories.addTab(tabLayoutCategories.newTab().setText("All"));
                 for (String categoryName : categoryMap.keySet()) {
                     tabLayoutCategories.addTab(tabLayoutCategories.newTab().setText(categoryName));
                 }
 
-                // 默认展示全部数据
                 adapter.updateData(allItems);
             });
         });

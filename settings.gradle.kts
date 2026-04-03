@@ -22,6 +22,10 @@ dependencyResolutionManagement {
         }
         google()
         mavenCentral()
+        // 🚨 核心新增：告诉 Gradle 去 JitPack 仓库下载 MPAndroidChart 图表库
+        maven {
+            url = uri("https://jitpack.io")
+        }
     }
 }
 

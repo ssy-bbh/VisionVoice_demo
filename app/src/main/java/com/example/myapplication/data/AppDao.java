@@ -26,4 +26,18 @@ public interface AppDao {
 
     @Update
     void updateShowcaseItem(ShowcaseItem item);
+
+    // ===== 个人主页：数据看板聚合查询 =====
+
+    // 1. 统计已解锁的图鉴总数
+    @Query("SELECT COUNT(*) FROM showcase_items WHERE isUnlocked = 1")
+    int getUnlockedCount();
+
+    // 2. 统计完美发音（历史最高分 >= 90）的单词数量
+    @Query("SELECT COUNT(*) FROM showcase_items WHERE highestScore >= 90")
+    int getPerfectPronunciationCount();
+
+    // 3. 统计历史发音练习的总次数
+    @Query("SELECT COUNT(*) FROM practice_records")
+    int getTotalPracticeCount();
 }
