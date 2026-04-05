@@ -63,7 +63,6 @@ public class PracticeActivity extends AppCompatActivity {
     private Switch switchOffline;
 
     // ===== 录音 =====
-    // ===== 录音 =====
     private boolean isRecording = false;
     private String targetWord;
 
@@ -121,7 +120,7 @@ public class PracticeActivity extends AppCompatActivity {
         }
         fetchPhonetics(targetWord);
 
-        // 🚨 核心修复：处理 AR 截帧路径 和 相册上传 Uri
+        // 处理 AR 截帧路径 和 相册上传 Uri
         ImageView ivTargetImage = findViewById(R.id.ivTargetImage);
         currentImagePath = getIntent().getStringExtra("extra_image_path");
         android.net.Uri imageUri = getIntent().getData();
@@ -130,7 +129,7 @@ public class PracticeActivity extends AppCompatActivity {
             ivTargetImage.setImageURI(imageUri);
             ivTargetImage.setImageTintList(null);
 
-            // 🚨 将相册图偷偷拷贝进沙盒，转为永久绝对路径
+            // 将相册图偷偷拷贝进沙盒，转为永久绝对路径
             AppDatabase.databaseWriteExecutor.execute(() -> {
                 try {
                     String fileName = "/album_capture_" + System.currentTimeMillis() + ".jpg";
@@ -176,7 +175,6 @@ public class PracticeActivity extends AppCompatActivity {
             }
         });
 
-        // 录音路径
         // 录音路径：从 m4a 有损格式改为 pcm 裸流格式
         audioFilePath = getExternalCacheDir().getAbsolutePath() + "/user_record.pcm";
 
@@ -229,7 +227,6 @@ public class PracticeActivity extends AppCompatActivity {
             // 万一用户手速极快，刚开App就扫，模型还没加载完
             Log.w(TAG, "模型还在全局加载中，稍后重试或降级");
             tvModeLabel.setText("🔒 离线模式 (全局加载中...)");
-            // 这里可以保留一个轮询，或者提示用户等两秒
         }
     }
 
@@ -259,14 +256,11 @@ public class PracticeActivity extends AppCompatActivity {
         tvScore.setText("--%");
         tvScore.setTextColor(ContextCompat.getColor(this, R.color.text_secondary));
 
-        // 🚨 核心架构：配置 Wav2Vec2 的黄金参数
         int sampleRate = 16000;
         int channelConfig = android.media.AudioFormat.CHANNEL_IN_MONO;
         int audioFormat = android.media.AudioFormat.ENCODING_PCM_16BIT;
 
-        // 计算底层硬件所需的最小缓冲区大小
         int minBufferSize = android.media.AudioRecord.getMinBufferSize(sampleRate, channelConfig, audioFormat);
-        // 保险起见，分配一个更大的应用级缓冲区以防止主线程卡顿导致音频丢包
         int bufferSize = Math.max(minBufferSize * 4, 8192);
 
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
@@ -285,7 +279,6 @@ public class PracticeActivity extends AppCompatActivity {
             audioRecord.startRecording();
             isRecording = true;
 
-            // 启动专属后台线程进行阻塞性数据拉取
             recordingThread = new Thread(() -> {
                 writeAudioDataToFile(bufferSize);
             }, "AudioRecorder_Thread");
@@ -301,7 +294,6 @@ public class PracticeActivity extends AppCompatActivity {
         }
     }
 
-    // 后台线程专用的写文件循环
     private void writeAudioDataToFile(int bufferSize) {
         byte[] data = new byte[bufferSize];
         java.io.FileOutputStream os = null;
@@ -313,7 +305,6 @@ public class PracticeActivity extends AppCompatActivity {
             return;
         }
 
-        // 阻塞式的 while 循环，绝不漏掉任何一个声学采样点
         while (isRecording) {
             int read = audioRecord.read(data, 0, bufferSize);
             if (read > 0) {
@@ -336,7 +327,6 @@ public class PracticeActivity extends AppCompatActivity {
     private void stopRecordingAndEvaluate() {
         isRecording = false;
 
-        // 安全地停止并释放 AudioRecord
         if (audioRecord != null) {
             try {
                 if (audioRecord.getRecordingState() == android.media.AudioRecord.RECORDSTATE_RECORDING) {
@@ -364,8 +354,6 @@ public class PracticeActivity extends AppCompatActivity {
                     updateModeLabel(false);
                 });
             }
-            // 注意：由于现在是纯 PCM 裸文件，如果你还要支持“在线模式”，你的后端 Python 脚本需要适配读取 raw PCM 而不是 mp4。
-            // 建议：由于我们重构了端侧体验，你可以专注于测试离线模式的提升。
             evaluatePronunciation(targetWord, audioFile);
         }
     }
@@ -375,7 +363,6 @@ public class PracticeActivity extends AppCompatActivity {
         new Thread(() -> {
             try {
                 Log.i(TAG, "🔒 端侧评估开始：" + word);
-                long t0 = System.currentTimeMillis();
 
                 float[] audioData = AudioProcessor.loadAndPreprocess(audioFile);
 
@@ -410,10 +397,9 @@ public class PracticeActivity extends AppCompatActivity {
                 }
 
                 runOnUiThread(() -> {
-                    updateUIWithFeedback(refArr, userArr, fbArr);
+                    // 🚨 传入真正的底层算分 result.score
+                    updateUIWithFeedback(refArr, userArr, fbArr, result.score);
                     bottomSheetBehavior.setState(BottomSheetBehavior.STATE_EXPANDED);
-                    tvScore.setText(result.score + "%");
-                    colorScore(result.score);
                 });
 
             } catch (Exception e) {
@@ -459,7 +445,8 @@ public class PracticeActivity extends AppCompatActivity {
                         JSONArray userPhonemes = json.getJSONArray("user_phonemes");
                         JSONArray feedback     = json.getJSONArray("feedback");
                         runOnUiThread(() -> {
-                            updateUIWithFeedback(refPhonemes, userPhonemes, feedback);
+                            // 在线模式不传预设分数，使用 -1 走兜底算分逻辑
+                            updateUIWithFeedback(refPhonemes, userPhonemes, feedback, -1);
                             bottomSheetBehavior.setState(BottomSheetBehavior.STATE_EXPANDED);
                         });
                     } catch (Exception e) {
@@ -467,15 +454,14 @@ public class PracticeActivity extends AppCompatActivity {
                     }
                 } else {
                     runOnUiThread(() ->
-                            Toast.makeText(PracticeActivity.this,
-                                    "服务器错误: " + response.code(), Toast.LENGTH_SHORT).show());
+                            Toast.makeText(PracticeActivity.this, "服务器错误: " + response.code(), Toast.LENGTH_SHORT).show());
                 }
             }
         });
     }
 
     // ===== UI 渲染 & 数据库更新 =====
-    private void updateUIWithFeedback(JSONArray refPhonemes, JSONArray userPhonemes, JSONArray feedback) {
+    private void updateUIWithFeedback(JSONArray refPhonemes, JSONArray userPhonemes, JSONArray feedback, int overrideScore) {
         LinearLayout llContainer = findViewById(R.id.llPhonemeContainer);
         llContainer.removeAllViews();
         try {
@@ -487,6 +473,11 @@ public class PracticeActivity extends AppCompatActivity {
                 String ref  = refPhonemes.getString(i);
                 String user = userPhonemes.getString(i);
                 String fb   = feedback.getString(i);
+
+                // 🌟 核心 UI 净化：如果是环境杂音导致的插入 (Insertion) 或者是没有基准音的对比 (-)，直接跳过不显示！
+                if (fb.equals("Insertion") || ref.equals("-")) {
+                    continue;
+                }
 
                 if (!ref.equals("-")) validPhonemeCount++;
 
@@ -535,42 +526,62 @@ public class PracticeActivity extends AppCompatActivity {
                 llContainer.addView(pairLayout);
             }
 
-            if (validPhonemeCount > 0) {
-                float rawAccuracy = totalScore / totalCount;
-                int displayScore;
-                if (rawAccuracy >= 0.8f) {
-                    displayScore = (int)(90 + (rawAccuracy - 0.8f) * 50);
-                } else if (rawAccuracy >= 0.5f) {
-                    displayScore = (int)(60 + (rawAccuracy - 0.5f) * 100);
-                } else {
-                    displayScore = (int)(rawAccuracy * 120);
-                }
-                displayScore = Math.max(0, Math.min(100, displayScore));
-                tvScore.setText(displayScore + "%");
-                colorScore(displayScore);
-                int finalScore = displayScore;
+            if (validPhonemeCount > 0 || overrideScore >= 0) {
+                int finalScore;
 
+                if (overrideScore >= 0) {
+                    // 🌟 采用底层算法给出的最高分！
+                    finalScore = overrideScore;
+                } else {
+                    float rawAccuracy = totalScore / validPhonemeCount;
+                    int displayScore;
+                    if (rawAccuracy >= 0.8f) {
+                        displayScore = (int)(90 + (rawAccuracy - 0.8f) * 50);
+                    } else if (rawAccuracy >= 0.5f) {
+                        displayScore = (int)(60 + (rawAccuracy - 0.5f) * 100);
+                    } else {
+                        displayScore = (int)(rawAccuracy * 120);
+                    }
+                    finalScore = Math.max(0, Math.min(100, displayScore));
+                }
+
+                tvScore.setText(finalScore + "%");
+                colorScore(finalScore);
+
+                // 数据库保存逻辑
+                int finalScoreForDb = finalScore;
                 AppDatabase.databaseWriteExecutor.execute(() -> {
                     try {
                         AppDao dao = AppDatabase.getInstance(PracticeActivity.this).appDao();
 
                         PracticeRecord record = new PracticeRecord(
                                 targetWord,
-                                finalScore,
+                                finalScoreForDb,
                                 System.currentTimeMillis(),
-                                currentImagePath // 如果是相册进来的，这里已经拿到转换后的本地路径了！
+                                currentImagePath
                         );
                         dao.insertRecord(record);
-                        android.util.Log.d("VISION_DEBUG", "✅ 成功保存记录流水: " + targetWord + " 得分: " + finalScore);
-                        // 用户完成了一次发音练习！触发打卡记录！
-                        com.example.myapplication.utils.UserStatsManager.INSTANCE.recordPractice(this);
+                        android.util.Log.d("VISION_DEBUG", "✅ 成功保存记录流水: " + targetWord + " 得分: " + finalScoreForDb);
+
+                        com.example.myapplication.utils.UserStatsManager.INSTANCE.recordPractice(PracticeActivity.this);
+                        // ==========================================
+                        // 🌟 每日挑战核销逻辑！(及格 >=60 分才算完成)
+                        // ==========================================
+                        if (finalScoreForDb >= 60) {
+                            boolean newlyCompleted = com.example.myapplication.utils.UserStatsManager.INSTANCE.markChallengeCompleted(PracticeActivity.this, targetWord);
+                            if (newlyCompleted) {
+                                runOnUiThread(() -> {
+                                    Toast.makeText(PracticeActivity.this, "🎉 太棒了！你达成了一个每日挑战: " + targetWord + "!", Toast.LENGTH_LONG).show();
+                                });
+                            }
+                        }
                         ShowcaseItem item = dao.getShowcaseItemByWord(targetWord);
 
                         if (item != null) {
                             if (!item.isUnlocked) {
                                 item.isUnlocked = true;
                                 item.unlockTime = System.currentTimeMillis();
-                                item.highestScore = finalScore;
+                                item.highestScore = finalScoreForDb;
                                 item.bestImagePath = currentImagePath;
                                 item.lastReviewedTime = System.currentTimeMillis();
 
@@ -579,8 +590,8 @@ public class PracticeActivity extends AppCompatActivity {
                             } else {
                                 item.lastReviewedTime = System.currentTimeMillis();
 
-                                if (finalScore > item.highestScore) {
-                                    item.highestScore = finalScore;
+                                if (finalScoreForDb > item.highestScore) {
+                                    item.highestScore = finalScoreForDb;
                                     if (currentImagePath != null) {
                                         item.bestImagePath = currentImagePath;
                                     }
@@ -599,7 +610,6 @@ public class PracticeActivity extends AppCompatActivity {
                         android.util.Log.e("VISION_DEBUG", "❌ 数据库保存失败!!!", e);
                     }
                 });
-
             }
         } catch (Exception e) {
             Log.e(TAG, "UI 更新异常", e);
@@ -670,8 +680,8 @@ public class PracticeActivity extends AppCompatActivity {
             textToSpeech.shutdown();
         }
 
-        // 🚨 2. 核心修复：安全终止后台录音线程与释放 AudioRecord 底层硬件
-        isRecording = false; // 这一步至关重要！它能立刻打断后台线程里的 while 循环
+        // 2. 核心修复：安全终止后台录音线程与释放 AudioRecord 底层硬件
+        isRecording = false;
         if (recordingThread != null) {
             recordingThread.interrupt();
             recordingThread = null;
@@ -689,6 +699,5 @@ public class PracticeActivity extends AppCompatActivity {
                 audioRecord = null;
             }
         }
-
     }
 }

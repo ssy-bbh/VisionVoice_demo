@@ -1,7 +1,6 @@
 package com.example.myapplication.ml;
 
 import android.util.Log;
-
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
@@ -9,27 +8,15 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.ShortBuffer;
 
-/**
- * 现代 AI 音频预处理工具类
- *
- * 输入：由 AudioRecord 直接生成的无损 16-bit PCM 裸文件 (.pcm)
- * 架构：彻底摒弃 MediaCodec 解码与 AAC 损伤
- * 输出：执行了零均值与单位方差 (Zero Mean & Unit Variance) 归一化的 Float 数组
- */
 public class AudioProcessor {
     private static final String TAG = "AudioProcessor";
 
-    /**
-     * 直接读取 PCM 裸文件并进行端到端的数学归一化处理
-     */
     public static float[] loadAndPreprocess(File audioFile) throws IOException {
-        // 1. 直接读取 16-bit PCM 裸字节，无需任何媒体解码器
         FileInputStream fis = new FileInputStream(audioFile);
         byte[] pcmBytes = new byte[(int) audioFile.length()];
         fis.read(pcmBytes);
         fis.close();
 
-        // 2. 将 Byte 转换为 Float (除以 32768.0f 映射到 [-1.0, 1.0])
         float[] floatData = new float[pcmBytes.length / 2];
         ByteBuffer bb = ByteBuffer.wrap(pcmBytes).order(ByteOrder.LITTLE_ENDIAN);
         ShortBuffer sb = bb.asShortBuffer();
@@ -37,59 +24,64 @@ public class AudioProcessor {
             floatData[i] = sb.get() / 32768.0f;
         }
 
-        Log.d(TAG, "PCM 读取完毕，采样点数=" + floatData.length);
+        // 🚨 核心修复 1：VAD (静音检测)，在放大前切除头尾的空白环境音！
+        // 0.02f 是一个经过测试的经验阈值，能过滤呼吸声，但保留气声
+        floatData = trimSilence(floatData, 0.02f);
 
-        // 🚨 3. 核心决胜点：执行严格的零均值与单位方差数学归一化
+        Log.d(TAG, "PCM 读取完毕，VAD裁剪后采样点数=" + floatData.length);
         return normalize(floatData);
     }
 
-    /**
-     * 严谨的数学归一化算法 (替代粗糙的峰值归一化)
-     * 依据研究报告公式: X_norm = (X - μ) / (σ + ε)
-     * 目的：让 Wav2Vec2 只看波形形状，彻底无视绝对响度干扰
-     */
-    private static float[] normalize(float[] audioData) {
+    // 🔪 极简高能：掐头去尾算法
+    private static float[] trimSilence(float[] audioData, float threshold) {
         if (audioData == null || audioData.length == 0) return audioData;
 
-        // 1. 计算均值 (μ)
-        double sum = 0;
-        for (float val : audioData) {
-            sum += val;
+        int start = 0;
+        int end = audioData.length - 1;
+        int buffer = 1600; // 0.1秒的缓冲时间，防止切掉 p、t 等爆破音的尾音
+
+        for (int i = 0; i < audioData.length; i++) {
+            if (Math.abs(audioData[i]) > threshold) {
+                start = Math.max(0, i - buffer);
+                break;
+            }
         }
+        for (int i = audioData.length - 1; i >= 0; i--) {
+            if (Math.abs(audioData[i]) > threshold) {
+                end = Math.min(audioData.length - 1, i + buffer);
+                break;
+            }
+        }
+
+        if (start >= end) return audioData; // 如果太安静，原样返回
+
+        float[] trimmed = new float[end - start + 1];
+        System.arraycopy(audioData, start, trimmed, 0, trimmed.length);
+        return trimmed;
+    }
+
+    private static float[] normalize(float[] audioData) {
+        if (audioData == null || audioData.length == 0) return audioData;
+        double sum = 0;
+        for (float val : audioData) sum += val;
         double mean = sum / audioData.length;
 
-        // 2. 计算方差求标准差 (σ)
         double varianceSum = 0;
-        for (float val : audioData) {
-            varianceSum += Math.pow(val - mean, 2);
-        }
+        for (float val : audioData) varianceSum += Math.pow(val - mean, 2);
         double stdDev = Math.sqrt(varianceSum / audioData.length);
 
-        // 极小常数 ε，防止在绝对静音环境（全 0 数据）中发生除以零的崩溃
         double epsilon = 1e-7;
-
-        // 3. 应用 Z-score 标准化
         float[] normalized = new float[audioData.length];
         for (int i = 0; i < audioData.length; i++) {
             normalized[i] = (float) ((audioData[i] - mean) / (stdDev + epsilon));
         }
-
-        Log.d(TAG, "数学归一化完成");
         return normalized;
     }
 
-    /**
-     * 简单的静音检测 (拦截无声片段)
-     */
     public static boolean isSilent(float[] audioData) {
         double rms = 0;
-        for (float val : audioData) {
-            rms += val * val;
-        }
+        for (float val : audioData) rms += val * val;
         rms = Math.sqrt(rms / audioData.length);
-
-        boolean silent = rms < 0.01;
-        if (silent) Log.w(TAG, "⚠️ 录音能量极低（RMS=" + rms + "），触发静音拦截");
-        return silent;
+        return rms < 0.01;
     }
 }

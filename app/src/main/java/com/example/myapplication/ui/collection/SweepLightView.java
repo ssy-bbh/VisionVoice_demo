@@ -1,6 +1,5 @@
 package com.example.myapplication.ui.collection;
 
-import android.animation.ValueAnimator;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Color;
@@ -8,68 +7,127 @@ import android.graphics.LinearGradient;
 import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.graphics.Shader;
+import android.hardware.Sensor;
+import android.hardware.SensorEvent;
+import android.hardware.SensorEventListener;
+import android.hardware.SensorManager;
 import android.util.AttributeSet;
 import android.view.View;
-import android.view.animation.LinearInterpolator;
 
-import androidx.annotation.Nullable;
+public class SweepLightView extends View implements SensorEventListener {
 
-public class SweepLightView extends View {
     private Paint paint;
+    private LinearGradient holographicGradient;
     private Matrix matrix;
-    private float translateX;
-    private ValueAnimator animator;
-    private int width;
 
-    public SweepLightView(Context context, @Nullable AttributeSet attrs) {
-        super(context, attrs);
-        init();
-    }
+    private SensorManager sensorManager;
+    private Sensor accelerometer;
 
-    private void init() {
+    private float currentTx = 0f;
+    private float currentTy = 0f;
+
+    // 🌟 新增：0=冷色(蓝青), 1=暖色(紫金)
+    private int themeMode = 0;
+
+    public SweepLightView(Context context) { super(context); init(context); }
+    public SweepLightView(Context context, AttributeSet attrs) { super(context, attrs); init(context); }
+
+    private void init(Context context) {
         paint = new Paint(Paint.ANTI_ALIAS_FLAG);
         matrix = new Matrix();
+        sensorManager = (SensorManager) context.getSystemService(Context.SENSOR_SERVICE);
+        if (sensorManager != null) {
+            accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
+        }
+    }
+
+    // 🌟 暴露给外部调用的变色方法
+    public void setLightTheme(int mode) {
+        this.themeMode = mode;
+        updateGradient(getWidth(), getHeight());
+        invalidate();
     }
 
     @Override
     protected void onSizeChanged(int w, int h, int oldw, int oldh) {
         super.onSizeChanged(w, h, oldw, oldh);
-        width = w;
-        // 创建一个倾斜的线性渐变：透明 -> 半透明白 -> 透明
-        LinearGradient shader = new LinearGradient(
-                -w, 0, 0, h,
-                new int[]{Color.TRANSPARENT, Color.parseColor("#4DFFFFFF"), Color.TRANSPARENT},
-                new float[]{0f, 0.5f, 1f},
-                Shader.TileMode.CLAMP
-        );
-        paint.setShader(shader);
+        updateGradient(w, h);
+    }
 
-        if (animator != null) animator.cancel();
-        // 光效从左上角扫到右下角，范围是 width * 2.5
-        animator = ValueAnimator.ofFloat(0, w * 2.5f);
-        animator.setDuration(3000); // 3秒扫一次
-        animator.setRepeatCount(ValueAnimator.INFINITE);
-        animator.setInterpolator(new LinearInterpolator());
-        animator.addUpdateListener(animation -> {
-            translateX = (float) animation.getAnimatedValue();
-            invalidate();
-        });
-        animator.start();
+    private void updateGradient(int w, int h) {
+        if (w == 0 || h == 0) return;
+        int[] colors;
+
+        if (themeMode == 0) {
+            // 💎 主题 0: 冰川钛银 (AR Scan)
+            colors = new int[]{
+                    Color.TRANSPARENT,
+                    Color.parseColor("#1A8B5CF6"), // 微弱紫
+                    Color.parseColor("#330EA5E9"), // 冰川蓝
+                    Color.parseColor("#80FFFFFF"), // 银白高光
+                    Color.parseColor("#4D06B6D4"), // 极客青
+                    Color.parseColor("#1A10B981"), // 幽暗绿
+                    Color.TRANSPARENT
+            };
+        } else {
+            // 🌅 主题 1: 日落霓虹 (Photo)
+            colors = new int[]{
+                    Color.TRANSPARENT,
+                    Color.parseColor("#1A0EA5E9"), // 微弱蓝
+                    Color.parseColor("#338B5CF6"), // 幻影紫
+                    Color.parseColor("#80FFFFFF"), // 银白高光
+                    Color.parseColor("#4DF59E0B"), // 琥珀金 (暖色核心)
+                    Color.parseColor("#1AEC4899"), // 霓虹粉
+                    Color.TRANSPARENT
+            };
+        }
+
+        float[] positions = new float[]{0f, 0.2f, 0.4f, 0.5f, 0.65f, 0.85f, 1f};
+        holographicGradient = new LinearGradient(
+                -w, -h, w * 2f, h * 2f,
+                colors, positions, Shader.TileMode.CLAMP
+        );
+        paint.setShader(holographicGradient);
     }
 
     @Override
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
-        if (paint.getShader() != null) {
-            matrix.setTranslate(translateX, 0);
-            paint.getShader().setLocalMatrix(matrix);
-            canvas.drawRect(0, 0, getWidth(), getHeight(), paint);
+        if (holographicGradient == null) return;
+        matrix.reset();
+        matrix.setTranslate(currentTx, currentTy);
+        holographicGradient.setLocalMatrix(matrix);
+        canvas.drawRect(0, 0, getWidth(), getHeight(), paint);
+    }
+
+    @Override
+    public void onSensorChanged(SensorEvent event) {
+        if (event.sensor.getType() == Sensor.TYPE_ACCELEROMETER) {
+            float gx = event.values[0];
+            float gy = event.values[1];
+            float normalizedX = Math.max(-1f, Math.min(1f, gx / 9.8f));
+            float normalizedY = Math.max(-1f, Math.min(1f, gy / 9.8f));
+            float targetTx = -normalizedX * (getWidth() * 1.2f);
+            float targetTy = normalizedY * (getHeight() * 1.2f);
+            currentTx += (targetTx - currentTx) * 0.1f;
+            currentTy += (targetTy - currentTy) * 0.1f;
+            postInvalidate();
+        }
+    }
+
+    @Override public void onAccuracyChanged(Sensor sensor, int accuracy) {}
+
+    @Override
+    protected void onAttachedToWindow() {
+        super.onAttachedToWindow();
+        if (sensorManager != null && accelerometer != null) {
+            sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_GAME);
         }
     }
 
     @Override
     protected void onDetachedFromWindow() {
         super.onDetachedFromWindow();
-        if (animator != null) animator.cancel();
+        if (sensorManager != null) sensorManager.unregisterListener(this);
     }
 }

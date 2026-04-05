@@ -80,4 +80,6 @@ dependencies {
     annotationProcessor("androidx.room:room-compiler:$room_version")
     annotationProcessor("androidx.room:room-compiler:$room_version")
     implementation("com.github.PhilJay:MPAndroidChart:v3.1.0")
+    // 引入 ML Kit 主体抠图引擎
+    implementation("com.google.mlkit:subject-segmentation:16.0.0-beta1")
 }

@@ -3,21 +3,20 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/surface_gray"
-    android:padding="20dp">
+    android:background="@color/surface_gray">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:paddingTop="20dp">
+        android:padding="20dp">
 
-        <!-- 顶部欢迎区 -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:gravity="center_vertical"
-            android:orientation="horizontal">
+            android:orientation="horizontal"
+            android:layout_marginTop="20dp">
             <LinearLayout
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
@@ -37,7 +36,6 @@
                     android:textSize="24sp"
                     android:textStyle="bold" />
             </LinearLayout>
-            <!-- Streak Badge -->
             <LinearLayout
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
@@ -54,8 +52,8 @@
             </LinearLayout>
         </LinearLayout>
 
-        <!-- 每日挑战卡片 -->
         <TextView
+            android:id="@+id/tvChallengeTitle"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="Daily Challenge"
@@ -68,46 +66,32 @@
         <androidx.cardview.widget.CardView
             style="@style/CardStyle"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content">
+            android:layout_height="wrap_content"
+            app:cardElevation="4dp">
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:padding="20dp"
+                android:padding="16dp"
                 android:orientation="vertical">
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Find these objects today:"
-                    android:textColor="@color/text_secondary"/>
+                    android:text="Find and scan these objects today:"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="12sp"/>
+
                 <LinearLayout
                     android:id="@+id/containerDailyTasks"
                     android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="16dp"
+                    android:layout_height="140dp"
+                    android:layout_marginTop="12dp"
                     android:orientation="horizontal"
-                    android:gravity="center">
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="🍎"
-                        android:textSize="32sp"
-                        android:layout_marginEnd="32dp"/>
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="💻"
-                        android:textSize="32sp"
-                        android:layout_marginEnd="32dp"/>
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="🚲"
-                        android:textSize="32sp"/>
+                    android:gravity="center"
+                    android:weightSum="3">
                 </LinearLayout>
             </LinearLayout>
         </androidx.cardview.widget.CardView>
 
-        <!-- 开始探索 (两个大入口) -->
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
@@ -123,71 +107,114 @@
             android:layout_height="wrap_content"
             android:orientation="horizontal">
 
-            <!-- Card 1: AR Scan -->
-            <androidx.cardview.widget.CardView
-                android:id="@+id/cardRealtimeScan"
-                style="@style/CardStyle"
-                app:cardBackgroundColor="@color/brand_blue"
+            <FrameLayout
                 android:layout_width="0dp"
                 android:layout_height="180dp"
                 android:layout_weight="1"
                 android:layout_marginEnd="8dp">
-                <RelativeLayout
+
+                <com.example.myapplication.ui.custom.GravityShimmerView
+                    android:id="@+id/shimmerBgScan"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent" />
+
+                <androidx.cardview.widget.CardView
+                    android:id="@+id/cardRealtimeScan"
                     android:layout_width="match_parent"
                     android:layout_height="match_parent"
-                    android:padding="16dp">
-                    <TextView
-                        android:id="@+id/tvScanTitle"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="AR Scan"
-                        android:textColor="@color/white"
-                        android:textSize="20sp"
-                        android:textStyle="bold"/>
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_below="@id/tvScanTitle"
-                        android:text="Real-time detection"
-                        android:textColor="#CCFFFFFF"
-                        android:textSize="12sp"
-                        android:layout_marginTop="4dp"/>
-                    <!-- 这里可以使用 ImageView 放相机图标 -->
-                </RelativeLayout>
-            </androidx.cardview.widget.CardView>
+                    app:cardBackgroundColor="@android:color/transparent"
+                    app:cardElevation="0dp"
+                    app:cardCornerRadius="16dp">
 
-            <!-- Card 2: Photo -->
-            <androidx.cardview.widget.CardView
-                android:id="@+id/cardPhotoUpload"
-                style="@style/CardStyle"
+                    <FrameLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent">
+
+                        <com.example.myapplication.ui.collection.SweepLightView
+                            android:id="@+id/sweepLightScan"
+                            android:layout_width="match_parent"
+                            android:layout_height="match_parent" />
+
+                        <RelativeLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="match_parent"
+                            android:padding="16dp">
+
+                            <TextView
+                                android:id="@+id/tvScanTitle"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="AR Scan"
+                                android:textColor="@color/white"
+                                android:textSize="20sp"
+                                android:textStyle="bold" />
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_below="@id/tvScanTitle"
+                                android:layout_marginTop="4dp"
+                                android:text="Real-time detection"
+                                android:textColor="#CCFFFFFF"
+                                android:textSize="12sp" />
+                        </RelativeLayout>
+                    </FrameLayout>
+                </androidx.cardview.widget.CardView>
+            </FrameLayout>
+
+            <FrameLayout
                 android:layout_width="0dp"
                 android:layout_height="180dp"
                 android:layout_weight="1"
                 android:layout_marginStart="8dp">
-                <RelativeLayout
+
+                <com.example.myapplication.ui.custom.GravityShimmerView
+                    android:id="@+id/shimmerBgPhoto"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent" />
+
+                <androidx.cardview.widget.CardView
+                    android:id="@+id/cardPhotoUpload"
                     android:layout_width="match_parent"
                     android:layout_height="match_parent"
-                    android:padding="16dp">
-                    <TextView
-                        android:id="@+id/tvPhotoTitle"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Photo"
-                        android:textColor="@color/brand_blue"
-                        android:textSize="20sp"
-                        android:textStyle="bold"/>
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_below="@id/tvPhotoTitle"
-                        android:text="From gallery"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="12sp"
-                        android:layout_marginTop="4dp"/>
-                </RelativeLayout>
-            </androidx.cardview.widget.CardView>
+                    app:cardBackgroundColor="@android:color/transparent"
+                    app:cardElevation="0dp"
+                    app:cardCornerRadius="16dp">
+
+                    <FrameLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent">
+
+                        <com.example.myapplication.ui.collection.SweepLightView
+                            android:id="@+id/sweepLightPhoto"
+                            android:layout_width="match_parent"
+                            android:layout_height="match_parent" />
+
+                        <RelativeLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="match_parent"
+                            android:padding="16dp">
+                            <TextView
+                                android:id="@+id/tvPhotoTitle"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Photo"
+                                android:textColor="@color/white"
+                                android:textSize="20sp"
+                                android:textStyle="bold"/>
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_below="@id/tvPhotoTitle"
+                                android:text="From gallery"
+                                android:textColor="#CCFFFFFF"
+                                android:textSize="12sp"
+                                android:layout_marginTop="4dp"/>
+                        </RelativeLayout>
+                    </FrameLayout>
+                </androidx.cardview.widget.CardView>
+            </FrameLayout>
         </LinearLayout>
-        
-        <Space android:layout_width="match_parent" android:layout_height="80dp"/>
+
+        <Space android:layout_width="match_parent" android:layout_height="100dp"/>
     </LinearLayout>
 </androidx.core.widget.NestedScrollView>

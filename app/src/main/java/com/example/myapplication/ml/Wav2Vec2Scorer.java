@@ -33,7 +33,14 @@ public class Wav2Vec2Scorer {
     public PronunciationScore score(String refPhonemeStr, float[] audioData) {
         List<String> userPhonemes = transcribe(audioData);
         List<String> refPhonemes = splitPhonemeString(refPhonemeStr);
+
+        // 1. 先进行原始的全局对齐
         AlignmentResult alignment = needlemanWunsch(refPhonemes, userPhonemes);
+
+        // 🚨 2. 核心魔法：掐头去尾！把前后没匹配上的环境杂音全部丢弃！
+        alignment = trimEdgeInsertions(alignment);
+
+        // 3. 拿干干净净的对齐结果去算分
         int score = calculateScore(alignment);
 
         List<String> ipaRef = new ArrayList<>();
@@ -44,15 +51,37 @@ public class Wav2Vec2Scorer {
         return new PronunciationScore(score, ipaRef, ipaUser, alignment.feedback);
     }
 
+    // ================= 【核心修复：局部匹配，截断前后噪音】 =================
+    private AlignmentResult trimEdgeInsertions(AlignmentResult a) {
+        List<String> ref = new ArrayList<>(a.reference);
+        List<String> usr = new ArrayList<>(a.user);
+        List<String> fb  = new ArrayList<>(a.feedback);
+
+        // 1. 砍掉开头的多余环境音 (只要是模型强行插入的幻觉音，全部丢弃)
+        while (!fb.isEmpty() && fb.get(0).equals("Insertion")) {
+            ref.remove(0);
+            usr.remove(0);
+            fb.remove(0);
+        }
+
+        // 2. 砍掉结尾的多余尾音
+        while (!fb.isEmpty() && fb.get(fb.size() - 1).equals("Insertion")) {
+            ref.remove(ref.size() - 1);
+            usr.remove(usr.size() - 1);
+            fb.remove(fb.size() - 1);
+        }
+
+        return new AlignmentResult(ref, usr, fb);
+    }
+
     private List<String> transcribe(float[] audioData) {
         try {
-            float maxAmp = 0.0001f;
-            for (float d : audioData) maxAmp = Math.max(maxAmp, Math.abs(d));
-            if (maxAmp < 0.015f) return new ArrayList<>();
-
             long[] shape = {1, audioData.length};
             FloatBuffer buffer = ByteBuffer.allocateDirect(audioData.length * 4).order(ByteOrder.nativeOrder()).asFloatBuffer();
-            for (float d : audioData) buffer.put(d / maxAmp);
+
+            // 🚨 核心修复 2：彻底删掉之前除以 maxAmp 的错误逻辑！
+            // 信任 AudioProcessor 传进来的完美 Z-score 数据
+            for (float d : audioData) buffer.put(d);
             buffer.rewind();
 
             OnnxTensor inputTensor = OnnxTensor.createTensor(env, buffer, shape);
@@ -113,10 +142,12 @@ public class Wav2Vec2Scorer {
         String u = normalizeForCompare(user);
         if (r.equals(u)) return "Match";
 
+        // 🌟 核心优化：在这里加入免死金牌！允许 /ʌ/ 和 /æ/ 互相混淆不扣分
         String[][] ignored = {
                 {"t","d"},{"d","t"},{"p","b"},{"b","p"},{"k","g"},{"g","k"},
                 {"v","b"},{"s","z"},{"z","s"},{"k","hh"}, {"k","h"}, {"p","hh"}, {"t","hh"},
-                {"iy","ih"}, {"ih","iy"}
+                {"iy","ih"}, {"ih","iy"},
+                {"ah", "ae"}, {"ae", "ah"} // <--- 专门为 Cup 的 u 准备的免死金牌！
         };
         for (String[] pair : ignored) if (pair[0].equals(r) && pair[1].equals(u)) return "Ignored";
 
@@ -169,12 +200,38 @@ public class Wav2Vec2Scorer {
     }
 
     private int calculateScore(AlignmentResult a) {
-        float total = 0;
-        for (String f : a.feedback) {
-            if (f.equals("Match") || f.equals("Ignored")) total += 1.0f;
-            else if (f.startsWith("Flaw:")) total += 0.6f;
+        float matchCount = 0;
+        int refSize = 0;
+        int insertCount = 0;
+
+        for (int k = 0; k < a.feedback.size(); k++) {
+            String f = a.feedback.get(k);
+            if (!a.reference.get(k).equals("-")) refSize++;
+
+            if (f.equals("Match") || f.equals("Ignored")) matchCount += 1.0f;
+            else if (f.startsWith("Flaw:")) matchCount += 0.6f;
+            else if (f.equals("Insertion")) insertCount++; // 统计幻觉插入音
         }
-        float acc = (a.reference.isEmpty()) ? 0 : total / a.reference.size();
+
+        if (refSize == 0) return 0;
+        float acc = matchCount / refSize;
+
+        // 🚨 核心修复 3：为 cup 这样的短促单词设计“极客宽容算法”
+        if (refSize <= 4) {
+            boolean firstIsGood = a.feedback.size() > 0 &&
+                    (a.feedback.get(0).equals("Match") || a.feedback.get(0).equals("Ignored"));
+
+            // 如果只有 3、4 个音，首字母读对了，且最多只丢了一个音（比如丢了气声 p 或吞了 u）
+            if (firstIsGood && matchCount >= (refSize - 1.2f)) {
+                acc = Math.max(acc, 0.88f); // 强行拉抬到保底 88 分（优秀）！
+            }
+        }
+
+        // 惩罚过长的幻觉环境音 (如果你没说话但是模型吐了一大串字母)
+        if (insertCount > refSize + 1) {
+            acc -= 0.1f * (insertCount - refSize);
+        }
+
         int s = acc >= 0.8f ? (int)(90 + (acc - 0.8f) * 50) : acc >= 0.5f ? (int)(60 + (acc - 0.5f) * 100) : (int)(acc * 120);
         return Math.max(0, Math.min(100, s));
     }
