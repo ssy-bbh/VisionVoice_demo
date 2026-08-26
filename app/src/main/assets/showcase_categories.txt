@@ -1,0 +1,273 @@
+# 图鉴分类映射表
+# 格式：单词|分类名（一行一条，# 开头为注释）
+# 启动时 AppDatabase 会读取 assets/labels.txt（模型词表）并和此表配对建库；
+# 不在此表中的新单词会自动归入 "Other" 分类。
+# 换更大的模型时，只需替换 labels.txt，想给新单词归类就往这个文件里加行。
+
+# 🚗 交通与街道
+bicycle|Traffic & Street
+car|Traffic & Street
+motorcycle|Traffic & Street
+airplane|Traffic & Street
+bus|Traffic & Street
+train|Traffic & Street
+truck|Traffic & Street
+boat|Traffic & Street
+traffic light|Traffic & Street
+fire hydrant|Traffic & Street
+stop sign|Traffic & Street
+parking meter|Traffic & Street
+bench|Traffic & Street
+
+# 🦁 动物世界
+bird|Animals
+cat|Animals
+dog|Animals
+horse|Animals
+sheep|Animals
+cow|Animals
+elephant|Animals
+bear|Animals
+zebra|Animals
+giraffe|Animals
+
+# 🎒 穿搭与箱包
+backpack|Accessories
+umbrella|Accessories
+handbag|Accessories
+tie|Accessories
+suitcase|Accessories
+
+# ⚽ 运动与户外
+frisbee|Sports & Outdoors
+skis|Sports & Outdoors
+snowboard|Sports & Outdoors
+sports ball|Sports & Outdoors
+kite|Sports & Outdoors
+baseball bat|Sports & Outdoors
+baseball glove|Sports & Outdoors
+skateboard|Sports & Outdoors
+surfboard|Sports & Outdoors
+tennis racket|Sports & Outdoors
+
+# 🍽️ 厨房与餐具
+bottle|Kitchen & Dining
+wine glass|Kitchen & Dining
+cup|Kitchen & Dining
+fork|Kitchen & Dining
+knife|Kitchen & Dining
+spoon|Kitchen & Dining
+bowl|Kitchen & Dining
+microwave|Kitchen & Dining
+oven|Kitchen & Dining
+toaster|Kitchen & Dining
+refrigerator|Kitchen & Dining
+sink|Kitchen & Dining
+
+# 🍔 食物
+banana|Food
+apple|Food
+sandwich|Food
+orange|Food
+broccoli|Food
+carrot|Food
+hot dog|Food
+pizza|Food
+donut|Food
+cake|Food
+
+# 🏠 家具与电子设备
+chair|Home & Electronics
+couch|Home & Electronics
+potted plant|Home & Electronics
+bed|Home & Electronics
+dining table|Home & Electronics
+toilet|Home & Electronics
+tv|Home & Electronics
+laptop|Home & Electronics
+mouse|Home & Electronics
+remote|Home & Electronics
+keyboard|Home & Electronics
+cell phone|Home & Electronics
+
+# 📖 日常杂物
+book|Everyday Items
+clock|Everyday Items
+vase|Everyday Items
+scissors|Everyday Items
+teddy bear|Everyday Items
+hair drier|Everyday Items
+toothbrush|Everyday Items
+person|Everyday Items
+
+# ========== 以下为 YOLO-World v2 (LVIS 228 词表) 新增词条 ==========
+
+# Traffic & Street
+ambulance|Traffic & Street
+cab|Traffic & Street
+cart|Traffic & Street
+drone|Traffic & Street
+ferry|Traffic & Street
+helicopter|Traffic & Street
+motor|Traffic & Street
+tank|Traffic & Street
+trunk|Traffic & Street
+wheel|Traffic & Street
+
+# Animals
+butterfly|Animals
+chicken|Animals
+deer|Animals
+duck|Animals
+eagle|Animals
+fish|Animals
+goat|Animals
+lamb|Animals
+lion|Animals
+monkey|Animals
+pet|Animals
+puppy|Animals
+rabbit|Animals
+rat|Animals
+salmon|Animals
+shark|Animals
+snake|Animals
+spider|Animals
+tiger|Animals
+turkey|Animals
+wolf|Animals
+
+# Clothing & Wearables
+armor|Clothing & Wearables
+boot|Clothing & Wearables
+bow|Clothing & Wearables
+cap|Clothing & Wearables
+cape|Clothing & Wearables
+coat|Clothing & Wearables
+costume|Clothing & Wearables
+dress|Clothing & Wearables
+glove|Clothing & Wearables
+hat|Clothing & Wearables
+helmet|Clothing & Wearables
+jacket|Clothing & Wearables
+jean|Clothing & Wearables
+mask|Clothing & Wearables
+shirt|Clothing & Wearables
+shoe|Clothing & Wearables
+skirt|Clothing & Wearables
+suit|Clothing & Wearables
+underwear|Clothing & Wearables
+
+# Accessories
+jewelry|Accessories
+wallet|Accessories
+watch|Accessories
+
+# Sports & Outdoors
+ball|Sports & Outdoors
+baseball|Sports & Outdoors
+bat|Sports & Outdoors
+racket|Sports & Outdoors
+sail|Sports & Outdoors
+ski|Sports & Outdoors
+slide|Sports & Outdoors
+
+# Kitchen & Dining
+basket|Kitchen & Dining
+bucket|Kitchen & Dining
+can|Kitchen & Dining
+dish|Kitchen & Dining
+glass|Kitchen & Dining
+jar|Kitchen & Dining
+pan|Kitchen & Dining
+plate|Kitchen & Dining
+pot|Kitchen & Dining
+
+# Everyday Items
+banner|Everyday Items
+barrel|Everyday Items
+bell|Everyday Items
+blanket|Everyday Items
+box|Everyday Items
+cooler|Everyday Items
+cover|Everyday Items
+die|Everyday Items
+doll|Everyday Items
+drum|Everyday Items
+flag|Everyday Items
+guitar|Everyday Items
+gun|Everyday Items
+magazine|Everyday Items
+map|Everyday Items
+nest|Everyday Items
+newspaper|Everyday Items
+painting|Everyday Items
+pillow|Everyday Items
+pistol|Everyday Items
+poker|Everyday Items
+pop|Everyday Items
+ram|Everyday Items
+rifle|Everyday Items
+runner|Everyday Items
+statue|Everyday Items
+sword|Everyday Items
+toy|Everyday Items
+
+# Food
+beef|Food
+bread|Food
+butter|Food
+cookie|Food
+egg|Food
+ginger|Food
+ham|Food
+honey|Food
+jam|Food
+lemon|Food
+pepper|Food
+pie|Food
+potato|Food
+salad|Food
+steak|Food
+toast|Food
+
+# Home & Electronics
+cabinet|Home & Electronics
+camera|Home & Electronics
+desk|Home & Electronics
+fan|Home & Electronics
+generator|Home & Electronics
+lamp|Home & Electronics
+locker|Home & Electronics
+mirror|Home & Electronics
+monitor|Home & Electronics
+piano|Home & Electronics
+printer|Home & Electronics
+radar|Home & Electronics
+speaker|Home & Electronics
+telephone|Home & Electronics
+
+# Tools & Stationery
+button|Tools & Stationery
+clip|Tools & Stationery
+drill|Tools & Stationery
+hammer|Tools & Stationery
+handle|Tools & Stationery
+hook|Tools & Stationery
+key|Tools & Stationery
+ladder|Tools & Stationery
+needle|Tools & Stationery
+nut|Tools & Stationery
+pen|Tools & Stationery
+pencil|Tools & Stationery
+pin|Tools & Stationery
+pipe|Tools & Stationery
+pole|Tools & Stationery
+tape|Tools & Stationery
+thread|Tools & Stationery
+
+# 补漏词条（避免落入 Other）
+shield|Sports & Outdoors
+soup|Food
+table|Home & Electronics
+towel|Home & Electronics

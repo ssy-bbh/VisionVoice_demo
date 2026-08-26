@@ -122,11 +122,14 @@ public class PracticeActivity extends AppCompatActivity {
 
         // 处理 AR 截帧路径 和 相册上传 Uri
         ImageView ivTargetImage = findViewById(R.id.ivTargetImage);
+        ImageView ivBackgroundImage = findViewById(R.id.ivBackgroundImage);
+
         currentImagePath = getIntent().getStringExtra("extra_image_path");
+        String bgImagePath = getIntent().getStringExtra("extra_bg_path");
         android.net.Uri imageUri = getIntent().getData();
 
         if (imageUri != null) {
-            ivTargetImage.setImageURI(imageUri);
+            com.bumptech.glide.Glide.with(this).load(imageUri).into(ivTargetImage);
             ivTargetImage.setImageTintList(null);
 
             // 将相册图偷偷拷贝进沙盒，转为永久绝对路径
@@ -153,9 +156,19 @@ public class PracticeActivity extends AppCompatActivity {
                 }
             });
 
-        } else if (currentImagePath != null) {
-            ivTargetImage.setImageBitmap(android.graphics.BitmapFactory.decodeFile(currentImagePath));
-            ivTargetImage.setImageTintList(null);
+        } else {
+            // 🌟 真正的 3D 图层渲染，彻底解决路径解析失败和灰屏问题！
+            if (bgImagePath != null) {
+                com.bumptech.glide.Glide.with(this)
+                        .load(bgImagePath) // Glide 智能识别路径
+                        .into(ivBackgroundImage);
+            }
+            if (currentImagePath != null) {
+                com.bumptech.glide.Glide.with(this)
+                        .load(currentImagePath)
+                        .into(ivTargetImage);
+                ivTargetImage.setImageTintList(null);
+            }
         }
 
         // TTS
@@ -176,7 +189,9 @@ public class PracticeActivity extends AppCompatActivity {
         });
 
         // 录音路径：从 m4a 有损格式改为 pcm 裸流格式
-        audioFilePath = getExternalCacheDir().getAbsolutePath() + "/user_record.pcm";
+        // 【防闪退】getExternalCacheDir() 在外部存储不可用时会返回 null
+        java.io.File cacheRoot = getExternalCacheDir() != null ? getExternalCacheDir() : getCacheDir();
+        audioFilePath = cacheRoot.getAbsolutePath() + "/user_record.pcm";
 
         // 按钮
         findViewById(R.id.btnRecord).setOnClickListener(v -> handleRecordClick());
@@ -223,11 +238,37 @@ public class PracticeActivity extends AppCompatActivity {
             switchOffline.setEnabled(true);
             updateModeLabel(true);
             Log.i(TAG, "⚡ 模型秒开成功！");
-        } else {
-            // 万一用户手速极快，刚开App就扫，模型还没加载完
-            Log.w(TAG, "模型还在全局加载中，稍后重试或降级");
-            tvModeLabel.setText("🔒 离线模式 (全局加载中...)");
+            return;
         }
+
+        // 【修复】原来只查一次就放弃，用户手快进本页时离线开关会永远灰着。
+        // 现在后台轮询全局加载进度（300MB 模型加载需要一段时间），就绪后自动激活
+        Log.w(TAG, "模型还在全局加载中，开启轮询等待...");
+        tvModeLabel.setText("🔒 离线模式 (全局加载中...)");
+        new Thread(() -> {
+            long deadline = System.currentTimeMillis() + 90_000; // 最长等 90 秒
+            while (System.currentTimeMillis() < deadline) {
+                if (isFinishing() || isDestroyed()) return;
+                if (ModelManager.isReady()) {
+                    wav2Vec2Scorer = ModelManager.getScorer();
+                    isModelReady = true;
+                    runOnUiThread(() -> {
+                        if (isFinishing() || isDestroyed()) return;
+                        switchOffline.setEnabled(true);
+                        if (isOfflineMode) updateModeLabel(true);
+                    });
+                    Log.i(TAG, "✅ 轮询等到模型就绪，离线模式激活");
+                    return;
+                }
+                try {
+                    Thread.sleep(500);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
+            }
+            Log.e(TAG, "模型加载超时，离线模式不可用");
+        }, "ModelReadyWatcher").start();
     }
 
     // ===== 录音逻辑 =====
@@ -295,6 +336,11 @@ public class PracticeActivity extends AppCompatActivity {
     }
 
     private void writeAudioDataToFile(int bufferSize) {
+        // 【防闪退】取本地快照：主线程可能随时把字段置空/释放，
+        // 录音循环里必须用局部引用，并在异常时安静退出线程
+        final android.media.AudioRecord recorder = audioRecord;
+        if (recorder == null) return;
+
         byte[] data = new byte[bufferSize];
         java.io.FileOutputStream os = null;
 
@@ -305,15 +351,24 @@ public class PracticeActivity extends AppCompatActivity {
             return;
         }
 
-        while (isRecording) {
-            int read = audioRecord.read(data, 0, bufferSize);
-            if (read > 0) {
-                try {
-                    os.write(data, 0, read);
-                } catch (IOException e) {
-                    Log.e(TAG, "PCM 写入异常", e);
+        try {
+            while (isRecording) {
+                int read = recorder.read(data, 0, bufferSize);
+                if (read > 0) {
+                    try {
+                        os.write(data, 0, read);
+                    } catch (IOException e) {
+                        Log.e(TAG, "PCM 写入异常", e);
+                    }
+                } else if (read < 0) {
+                    // read 出错（如设备被抢占），立即终止，防止死循环
+                    Log.e(TAG, "AudioRecord.read 返回错误码: " + read);
+                    break;
                 }
             }
+        } catch (IllegalStateException | NullPointerException e) {
+            // 【防闪退】AudioRecord 已被主线程 release 的竞态：吞掉异常，安全退出线程
+            Log.e(TAG, "录音循环因 AudioRecord 释放而终止（预期竞态）", e);
         }
 
         try {
@@ -324,8 +379,21 @@ public class PracticeActivity extends AppCompatActivity {
         }
     }
 
-    private void stopRecordingAndEvaluate() {
+    /**
+     * 【防闪退】先让录音线程退出，再释放 AudioRecord。
+     * 顺序反了会出现：线程正在 read() → native 对象被 release → IllegalStateException 崩溃。
+     */
+    private void stopRecorderSafely() {
         isRecording = false;
+
+        if (recordingThread != null) {
+            try {
+                recordingThread.join(800);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            recordingThread = null;
+        }
 
         if (audioRecord != null) {
             try {
@@ -335,11 +403,17 @@ public class PracticeActivity extends AppCompatActivity {
             } catch (Exception e) {
                 Log.e(TAG, "停止录音异常", e);
             } finally {
-                audioRecord.release();
+                try {
+                    audioRecord.release();
+                } catch (Exception ignored) {}
                 audioRecord = null;
-                recordingThread = null;
             }
         }
+    }
+
+    private void stopRecordingAndEvaluate() {
+        // 【防闪退】统一走安全停止：先等录音线程退出，再释放硬件
+        stopRecorderSafely();
 
         File audioFile = new File(audioFilePath);
 
@@ -360,6 +434,14 @@ public class PracticeActivity extends AppCompatActivity {
 
     // ===== 端侧评估 =====
     private void evaluateOnDevice(String word, File audioFile) {
+        // 【防闪退】兜底判空：极端时序下 isModelReady 可见但 scorer 引用还未同步
+        final Wav2Vec2Scorer scorer = wav2Vec2Scorer;
+        if (scorer == null) {
+            Log.e(TAG, "Scorer 为空，降级在线模式");
+            isOfflineMode = false;
+            evaluatePronunciation(word, audioFile);
+            return;
+        }
         new Thread(() -> {
             try {
                 Log.i(TAG, "🔒 端侧评估开始：" + word);
@@ -379,7 +461,7 @@ public class PracticeActivity extends AppCompatActivity {
                     return;
                 }
 
-                Wav2Vec2Scorer.PronunciationScore result = wav2Vec2Scorer.score(refPhonemes, audioData);
+                Wav2Vec2Scorer.PronunciationScore result = scorer.score(refPhonemes, audioData);
 
                 JSONArray refArr  = new JSONArray();
                 JSONArray userArr = new JSONArray();
@@ -405,6 +487,7 @@ public class PracticeActivity extends AppCompatActivity {
             } catch (Exception e) {
                 Log.e(TAG, "端侧评估失败", e);
                 runOnUiThread(() -> {
+                    if (isFinishing() || isDestroyed()) return;
                     Toast.makeText(this, "端侧评估失败，切换到在线模式重试", Toast.LENGTH_SHORT).show();
                     isOfflineMode = false;
                     switchOffline.setChecked(false);
@@ -462,7 +545,12 @@ public class PracticeActivity extends AppCompatActivity {
 
     // ===== UI 渲染 & 数据库更新 =====
     private void updateUIWithFeedback(JSONArray refPhonemes, JSONArray userPhonemes, JSONArray feedback, int overrideScore) {
+        // 【防闪退】网络/端侧回调是异步的，回来时页面可能已被销毁：
+        // findViewById 会返回 null，直接 removeAllViews 就是 NPE 闪退
+        if (isFinishing() || isDestroyed()) return;
+
         LinearLayout llContainer = findViewById(R.id.llPhonemeContainer);
+        if (llContainer == null) return;
         llContainer.removeAllViews();
         try {
             float totalScore = 0f;
@@ -590,7 +678,7 @@ public class PracticeActivity extends AppCompatActivity {
                             } else {
                                 item.lastReviewedTime = System.currentTimeMillis();
 
-                                if (finalScoreForDb > item.highestScore) {
+                                if (finalScoreForDb >= item.highestScore) {
                                     item.highestScore = finalScoreForDb;
                                     if (currentImagePath != null) {
                                         item.bestImagePath = currentImagePath;
@@ -640,7 +728,9 @@ public class PracticeActivity extends AppCompatActivity {
             @Override
             public void onFailure(@NonNull Call call, @NonNull IOException e) {
                 runOnUiThread(() -> {
+                    if (isFinishing() || isDestroyed()) return;
                     TextView tvPhonetic = findViewById(R.id.tvPhonetic);
+                    if (tvPhonetic == null) return;
                     if (cachedPhonemeStr != null) {
                         tvPhonetic.setText("/" + cachedPhonemeStr + "/");
                     } else {
@@ -659,8 +749,10 @@ public class PracticeActivity extends AppCompatActivity {
                         cachedPhonemeStr = phonemeStr;
                         phonemeCache.put(word, phonemeStr);
                         runOnUiThread(() -> {
+                            // 【防闪退】回调回来时页面可能已销毁
+                            if (isFinishing() || isDestroyed()) return;
                             TextView tvPhonetic = findViewById(R.id.tvPhonetic);
-                            tvPhonetic.setText(phonetics);
+                            if (tvPhonetic != null) tvPhonetic.setText(phonetics);
                         });
                     } catch (Exception e) {
                         Log.e(TAG, "解析音标 JSON 失败", e);
@@ -676,28 +768,29 @@ public class PracticeActivity extends AppCompatActivity {
 
         // 1. 释放 TTS 资源
         if (textToSpeech != null) {
-            textToSpeech.stop();
+            try {
+                textToSpeech.stop();
+            } catch (Exception ignored) {}
             textToSpeech.shutdown();
         }
 
-        // 2. 核心修复：安全终止后台录音线程与释放 AudioRecord 底层硬件
-        isRecording = false;
-        if (recordingThread != null) {
-            recordingThread.interrupt();
-            recordingThread = null;
-        }
-
-        if (audioRecord != null) {
-            try {
-                if (audioRecord.getRecordingState() == android.media.AudioRecord.RECORDSTATE_RECORDING) {
-                    audioRecord.stop();
-                }
-            } catch (Exception e) {
-                Log.e(TAG, "停止 AudioRecord 异常", e);
-            } finally {
-                audioRecord.release();
-                audioRecord = null;
+        // 2. 【防闪退】安全终止后台录音线程并释放 AudioRecord（先停线程再释放）
+        stopRecorderSafely();
+    }
+    // 🌟 防 OOM 核心引擎：按需采样压缩图片，绝不让内存爆炸
+    private android.graphics.Bitmap decodeSafeBitmap(String path, int reqWidth, int reqHeight) {
+        final android.graphics.BitmapFactory.Options options = new android.graphics.BitmapFactory.Options();
+        options.inJustDecodeBounds = true;
+        android.graphics.BitmapFactory.decodeFile(path, options);
+        options.inSampleSize = 1;
+        if (options.outHeight > reqHeight || options.outWidth > reqWidth) {
+            final int halfHeight = options.outHeight / 2;
+            final int halfWidth = options.outWidth / 2;
+            while ((halfHeight / options.inSampleSize) >= reqHeight && (halfWidth / options.inSampleSize) >= reqWidth) {
+                options.inSampleSize *= 2;
             }
         }
+        options.inJustDecodeBounds = false;
+        return android.graphics.BitmapFactory.decodeFile(path, options);
     }
 }

@@ -202,8 +202,9 @@ public class OnnxTestActivity extends AppCompatActivity {
         super.onDestroy();
         try {
             if (session != null) session.close();
-            if (env != null) env.close();
-        } catch (OrtException e) {
+            // 🚨 OrtEnvironment 是全局单例（ModelManager 里的正式模型也在用），
+            // 这里绝不能 close，否则返回正式功能后所有 ONNX 推理全部崩溃
+        } catch (Exception e) {
             Log.e(TAG, "清理失败", e);
         }
     }

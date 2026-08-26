@@ -4,10 +4,12 @@ import android.content.Context
 import android.content.res.AssetFileDescriptor
 import android.graphics.Bitmap
 import android.graphics.RectF
+import android.os.Build
 import android.os.SystemClock
 import android.util.Log
 import org.tensorflow.lite.DataType
 import org.tensorflow.lite.Interpreter
+import org.tensorflow.lite.nnapi.NnApiDelegate
 import java.io.FileInputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -25,7 +27,20 @@ class YoloDetector(
 
     private var interpreter: Interpreter? = null
     private var labels: List<String> = emptyList()
+    private var nnApiDelegate: NnApiDelegate? = null
     private val TAG = "VISION_DEBUG"
+
+    companion object {
+        // 【加速开关】尝试用 NNAPI 硬件加速（NPU/GPU/DSP）。
+        // 如果在某台设备上推理反而变慢或行为异常，改成 false 退回纯 CPU。
+        const val USE_NNAPI = true
+    }
+
+    // 【防闪退】推理与释放加同一把锁：
+    // onDestroy 里 close() 与相机线程 detect() 并发会导致 Interpreter use-after-free（native SIGSEGV）
+    private val inferLock = Any()
+    @Volatile
+    private var closed = false
 
     // 模型参数
     private var outputChannels = 84
@@ -61,6 +76,17 @@ class YoloDetector(
 
             val options = Interpreter.Options()
             options.setNumThreads(numThreads)
+            // 【加速】有 NPU/GPU 的设备尝试 NNAPI 硬件加速；失败自动回退纯 CPU
+            if (USE_NNAPI && Build.VERSION.SDK_INT >= 27) {
+                try {
+                    nnApiDelegate = NnApiDelegate()
+                    options.addDelegate(nnApiDelegate)
+                    Log.wtf(TAG, "✅ NNAPI delegate 已启用（硬件加速）")
+                } catch (e: Throwable) {
+                    Log.e(TAG, "NNAPI 不可用，回退 CPU 推理", e)
+                    nnApiDelegate = null
+                }
+            }
             interpreter = Interpreter(mappedByteBuffer, options)
 
             // 1. 检查输入 Tensor 格式
@@ -130,7 +156,17 @@ class YoloDetector(
     }
 
     fun detect(bitmap: Bitmap): List<Result> {
-        if (interpreter == null) return emptyList()
+        if (closed || interpreter == null) return emptyList()
+        // 【防闪退】已回收的 Bitmap 直接拦截，避免 getPixels 抛 IllegalStateException
+        if (bitmap.isRecycled) return emptyList()
+
+        return synchronized(inferLock) {
+            if (closed || interpreter == null) return@synchronized emptyList()
+            detectLocked(bitmap)
+        }
+    }
+
+    private fun detectLocked(bitmap: Bitmap): List<Result> {
 
         // =========================================================================
         // 【关键实现 1】预处理：直接拉伸 (Stretch) 到 640x640
@@ -186,7 +222,7 @@ class YoloDetector(
 
         // 4. 后处理 (Post-processing)
         val results = ArrayList<Result>()
-        val confThreshold = 0.50f // 只显示置信度 > 50% 的结果
+        val confThreshold = 0.30f // 开放词表模型分数普遍偏低（实测 jacket≈0.47），阈值需比 COCO 专用模型低
         val iouThreshold = 0.45f
         // 接管原始输出进行张量解析
         for (i in 0 until outputAnchors) {
@@ -299,8 +335,17 @@ class YoloDetector(
     }
 
     fun close() {
-        interpreter?.close()
-        interpreter = null
+        synchronized(inferLock) {
+            closed = true
+            interpreter?.close()
+            interpreter = null
+            // 委托必须在 interpreter 之后释放
+            try {
+                nnApiDelegate?.close()
+            } catch (_: Throwable) {
+            }
+            nnApiDelegate = null
+        }
     }
 
 

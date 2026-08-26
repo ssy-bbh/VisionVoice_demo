@@ -69,6 +69,7 @@ dependencies {
     implementation("androidx.camera:camera-view:1.3.1")
     implementation(libs.core.ktx)
     implementation("com.microsoft.onnxruntime:onnxruntime-android:1.17.0")
+    implementation(libs.play.services.mlkit.subject.segmentation)
     // Testing dependencies
     testImplementation(libs.junit)
     androidTestImplementation(libs.ext.junit)
@@ -80,6 +81,6 @@ dependencies {
     annotationProcessor("androidx.room:room-compiler:$room_version")
     annotationProcessor("androidx.room:room-compiler:$room_version")
     implementation("com.github.PhilJay:MPAndroidChart:v3.1.0")
-    // 引入 ML Kit 主体抠图引擎
-    implementation("com.google.mlkit:subject-segmentation:16.0.0-beta1")
+    // 引入业界标杆：Glide 图像引擎
+    implementation("com.github.bumptech.glide:glide:4.16.0")
 }

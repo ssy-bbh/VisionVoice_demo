@@ -14,8 +14,18 @@ public class AudioProcessor {
     public static float[] loadAndPreprocess(File audioFile) throws IOException {
         FileInputStream fis = new FileInputStream(audioFile);
         byte[] pcmBytes = new byte[(int) audioFile.length()];
-        fis.read(pcmBytes);
+        // 【防数据损坏】InputStream.read 单次调用不保证读满，必须循环读到 EOF
+        int off = 0;
+        int n;
+        while (off < pcmBytes.length && (n = fis.read(pcmBytes, off, pcmBytes.length - off)) != -1) {
+            off += n;
+        }
         fis.close();
+        if (off < pcmBytes.length) {
+            byte[] trimmedBytes = new byte[off];
+            System.arraycopy(pcmBytes, 0, trimmedBytes, 0, off);
+            pcmBytes = trimmedBytes;
+        }
 
         float[] floatData = new float[pcmBytes.length / 2];
         ByteBuffer bb = ByteBuffer.wrap(pcmBytes).order(ByteOrder.LITTLE_ENDIAN);
@@ -79,6 +89,8 @@ public class AudioProcessor {
     }
 
     public static boolean isSilent(float[] audioData) {
+        // 【防闪退】空数组直接判静音，避免 0/0 = NaN 漏判
+        if (audioData == null || audioData.length == 0) return true;
         double rms = 0;
         for (float val : audioData) rms += val * val;
         rms = Math.sqrt(rms / audioData.length);

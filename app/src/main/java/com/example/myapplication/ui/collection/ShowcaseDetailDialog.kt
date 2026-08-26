@@ -39,11 +39,13 @@ class ShowcaseDetailDialog : DialogFragment() {
         if (uri != null && word != null) {
             // 拿到相册图片了！启动协程丢给引擎去覆盖！
             lifecycleScope.launch {
-                // TODO: 🚨 这里请替换为你项目中实际获取 AppDao 的方法
-                val appDao = AppDatabase.getInstance(requireContext()).appDao()
+                // 🚨 防闪退：弹窗可能在选图期间被关掉，requireContext() 会抛 IllegalStateException
+                if (!isAdded) return@launch
+                val appContext = requireContext().applicationContext
+                val appDao = AppDatabase.getInstance(appContext).appDao()
 
                 val savedPath = StorageHelper.saveAndOverwriteImage(
-                    context = requireContext(),
+                    context = appContext,
                     targetWord = word!!,
                     bitmap = null,
                     uri = uri, // 传相册拿到的 Uri
@@ -60,7 +62,10 @@ class ShowcaseDetailDialog : DialogFragment() {
     }
 
     companion object {
-        fun newInstance(word: String, imagePath: String, score: Int): ShowcaseDetailDialog {
+        // 🚨 防闪退：imagePath 必须允许为 null。
+        // Java 侧 ShowcaseItem.bestImagePath 是平台类型，解锁时可能没图（AR 帧为空的降级路径），
+        // 若声明为非空 String，传 null 进来会直接抛 NPE 闪退。
+        fun newInstance(word: String, imagePath: String?, score: Int): ShowcaseDetailDialog {
             val dialog = ShowcaseDetailDialog()
             val args = Bundle().apply {
                 putString("WORD", word)

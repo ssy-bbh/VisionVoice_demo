@@ -28,6 +28,11 @@ public class MainActivity extends AppCompatActivity {
         // 进 App 就开始后台加载模型
         com.example.myapplication.ml.ModelManager.preload(this);
 
+        // 🌟 图鉴动态播种：以 assets/labels.txt（当前模型词表）为准建库/补库。
+        // 首次安装 = 全量建库；以后换更大的模型只需替换模型文件和 labels.txt，
+        // 下次启动自动把新单词补进图鉴，已解锁条目不受影响。
+        com.example.myapplication.data.AppDatabase.syncShowcaseFromLabels(this);
+
         // 监听正常点击切换 Tab 的事件
         bottomNav.setOnItemSelectedListener(item -> {
             Fragment selectedFragment = null;

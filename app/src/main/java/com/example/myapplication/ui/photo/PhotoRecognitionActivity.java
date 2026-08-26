@@ -59,16 +59,22 @@ public class PhotoRecognitionActivity extends AppCompatActivity {
         }
 
         // Initialize the recognition helper with model input size
-        yoloDetector = new YoloDetector(this, "yolov8n.tflite", "labels.txt", 640, 4);
+        yoloDetector = new YoloDetector(this, "yolov8s_worldv2.tflite", "labels.txt", 416, 4);
 
         pickImageLauncher = registerForActivityResult(
                 new ActivityResultContracts.StartActivityForResult(),
                 result -> {
                     if (result.getResultCode() == Activity.RESULT_OK && result.getData() != null) {
                         Uri imageUri = result.getData().getData();
-                        currentImageUri = imageUri.toString(); // 保存 URI 字符串
+                        currentImageUri = imageUri != null ? imageUri.toString() : null;
                         try {
-                            Bitmap bitmap = MediaStore.Images.Media.getBitmap(this.getContentResolver(), imageUri);
+                            // 【防OOM闪退】不能用 MediaStore.getBitmap 全尺寸解码，
+                            // 用户从相册选一张 4800 万像素的照片会直接撑爆内存。
+                            // 这里按目标尺寸降采样解码（检测只需要 640，显示 2000 足够清晰）
+                            Bitmap bitmap = decodeSampledBitmap(imageUri, 2000, 2000);
+                            if (bitmap == null) {
+                                throw new IOException("图片解码失败");
+                            }
                             ivSelectedImage.setImageBitmap(bitmap);
                             recognizeImage(bitmap);
                         } catch (IOException e) {
@@ -137,6 +143,38 @@ public class PhotoRecognitionActivity extends AppCompatActivity {
                 currentRecognitionResult = null;
             }
         }).start();
+    }
+
+    /**
+     * 【防OOM】按需降采样解码相册图片，避免超大图全量解码撑爆内存
+     */
+    private Bitmap decodeSampledBitmap(Uri uri, int reqWidth, int reqHeight) throws IOException {
+        android.graphics.BitmapFactory.Options options = new android.graphics.BitmapFactory.Options();
+
+        // 第一遍：只读尺寸
+        options.inJustDecodeBounds = true;
+        try (java.io.InputStream is = getContentResolver().openInputStream(uri)) {
+            if (is == null) return null;
+            android.graphics.BitmapFactory.decodeStream(is, null, options);
+        }
+
+        // 计算 2 的幂次采样率
+        int inSampleSize = 1;
+        if (options.outHeight > reqHeight || options.outWidth > reqWidth) {
+            final int halfHeight = options.outHeight / 2;
+            final int halfWidth = options.outWidth / 2;
+            while ((halfHeight / inSampleSize) >= reqHeight && (halfWidth / inSampleSize) >= reqWidth) {
+                inSampleSize *= 2;
+            }
+        }
+
+        // 第二遍：真正解码
+        options.inJustDecodeBounds = false;
+        options.inSampleSize = inSampleSize;
+        try (java.io.InputStream is = getContentResolver().openInputStream(uri)) {
+            if (is == null) return null;
+            return android.graphics.BitmapFactory.decodeStream(is, null, options);
+        }
     }
 
     @Override

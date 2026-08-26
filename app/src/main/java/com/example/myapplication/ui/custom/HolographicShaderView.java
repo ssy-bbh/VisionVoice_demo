@@ -35,10 +35,17 @@ public class HolographicShaderView extends View {
         // 🚨 只有 API 33+ 才更新 Uniform
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && laserShader instanceof RuntimeShader) {
             RuntimeShader shader = (RuntimeShader) laserShader;
-            shader.setFloatUniform("uTime", System.currentTimeMillis() % 100000 / 1000f);
-            shader.setFloatUniform("uSize", getWidth(), getHeight());
-            // 如果你有陀螺仪数据，也在这里 set
-            //shader.setFloatUniform("uGyroOffset", 0f, 0f);
+            // 【防闪退】当前共享着色器源码里没有声明 uTime / uSize，
+            // setFloatUniform 遇到未声明的 uniform 会抛 IllegalArgumentException，
+            // 而 onDraw 里的异常会直接导致闪退，所以必须兜住
+            try {
+                shader.setFloatUniform("uTime", System.currentTimeMillis() % 100000 / 1000f);
+                shader.setFloatUniform("uSize", getWidth(), getHeight());
+                // 如果你有陀螺仪数据，也在这里 set
+                shader.setFloatUniform("uGyroOffset", 0f, 0f);
+            } catch (IllegalArgumentException e) {
+                // uniform 不存在则跳过动画参数，只画静态效果
+            }
             canvas.drawRect(0, 0, getWidth(), getHeight(), shaderPaint);
             invalidate();
         } else {

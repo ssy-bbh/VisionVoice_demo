@@ -39,13 +39,20 @@
             app:cardElevation="0dp"
             app:cardBackgroundColor="@color/surface_gray"
             android:layout_marginTop="24dp">
+
+            <ImageView
+                android:id="@+id/ivBackgroundImage"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:scaleType="centerCrop"
+                app:tint="#80000000" />
+
             <ImageView
                 android:id="@+id/ivTargetImage"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
-                android:scaleType="centerInside"
-                android:src="@android:drawable/ic_menu_gallery"
-                app:tint="@color/text_secondary"/>
+                android:scaleType="centerCrop"
+                android:src="@android:drawable/ic_menu_gallery" />
         </androidx.cardview.widget.CardView>
 
         <TextView

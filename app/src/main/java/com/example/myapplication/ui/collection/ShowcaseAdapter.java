@@ -49,7 +49,10 @@ public class ShowcaseAdapter extends RecyclerView.Adapter<ShowcaseAdapter.Showca
         ShowcaseItem item = items.get(position);
 
         // 1. 设置底部单词文本 (首字母大写)
-        String displayWord = item.targetWord.substring(0, 1).toUpperCase() + item.targetWord.substring(1);
+        // 【防闪退】空串 substring(0,1) 会抛 StringIndexOutOfBoundsException
+        String displayWord = (item.targetWord == null || item.targetWord.isEmpty())
+                ? ""
+                : item.targetWord.substring(0, 1).toUpperCase() + item.targetWord.substring(1);
         holder.tvObjectWord.setText(displayWord);
 
         // 2. 根据解锁状态控制 UI
@@ -85,22 +88,16 @@ public class ShowcaseAdapter extends RecyclerView.Adapter<ShowcaseAdapter.Showca
                 }
             });
 
-            // 加载照片：兼容 AR 实景的本地 File 和 相册的 Content URI
+            // 🚨 工业级修复：引入 Glide 全异步加载、自动降维缓存、绝对保留透明通道！
             if (item.bestImagePath != null && !item.bestImagePath.isEmpty()) {
-                try {
-                    if (item.bestImagePath.startsWith("content://") || item.bestImagePath.startsWith("file://")) {
-                        holder.ivObjectPhoto.setImageURI(Uri.parse(item.bestImagePath));
-                    } else {
-                        File imgFile = new File(item.bestImagePath);
-                        if (imgFile.exists()) {
-                            holder.ivObjectPhoto.setImageURI(Uri.fromFile(imgFile));
-                        }
-                    }
-                } catch (SecurityException e) {
-                    android.util.Log.e("VISION_DEBUG", "相册图片权限失效: " + e.getMessage());
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }
+                com.bumptech.glide.Glide.with(holder.itemView.getContext())
+                        .load(item.bestImagePath) // Glide 智能处理所有的本地路径、Uri 和网络链接
+                        .override(400, 400)       // 强制压缩为小尺寸，彻底告别 OOM 闪退
+                        .centerCrop()
+                        .into(holder.ivObjectPhoto);
+            } else {
+                com.bumptech.glide.Glide.with(holder.itemView.getContext()).clear(holder.ivObjectPhoto);
+                holder.ivObjectPhoto.setImageDrawable(null);
             }
 
             // 动态调整卡片高度
@@ -141,6 +138,8 @@ public class ShowcaseAdapter extends RecyclerView.Adapter<ShowcaseAdapter.Showca
             holder.layoutTopBar.setVisibility(View.INVISIBLE);
             holder.viewScrim.setVisibility(View.GONE);
 
+            // 🚨 必须在此清理 Glide 缓存，防止快速滑动时“未解锁”卡片显示了别的图片
+            com.bumptech.glide.Glide.with(holder.itemView.getContext()).clear(holder.ivObjectPhoto);
             holder.ivObjectPhoto.setImageURI(null);
             holder.ivObjectPhoto.clearColorFilter();
 
@@ -175,4 +174,20 @@ public class ShowcaseAdapter extends RecyclerView.Adapter<ShowcaseAdapter.Showca
             tvObjectWord = itemView.findViewById(R.id.tvObjectWord);
         }
     }
+    // 🌟 专为 RecyclerView 列表滑动优化的图像降维解码器
+   /* private android.graphics.Bitmap decodeSafeBitmap(String path, int reqWidth, int reqHeight) {
+        final android.graphics.BitmapFactory.Options options = new android.graphics.BitmapFactory.Options();
+        options.inJustDecodeBounds = true;
+        android.graphics.BitmapFactory.decodeFile(path, options);
+        options.inSampleSize = 1;
+        if (options.outHeight > reqHeight || options.outWidth > reqWidth) {
+            final int halfH = options.outHeight / 2;
+            final int halfW = options.outWidth / 2;
+            while ((halfH / options.inSampleSize) >= reqHeight && (halfW / options.inSampleSize) >= reqWidth) {
+                options.inSampleSize *= 2;
+            }
+        }
+        options.inJustDecodeBounds = false;
+        return android.graphics.BitmapFactory.decodeFile(path, options);
+    }*/
 }

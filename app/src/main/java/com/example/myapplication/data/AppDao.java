@@ -24,6 +24,10 @@ public interface AppDao {
     @Query("SELECT * FROM showcase_items WHERE targetWord = :word LIMIT 1")
     ShowcaseItem getShowcaseItemByWord(String word);
 
+    // 只取单词列表（用于动态建库时的差集比对，避免 SELECT * 拉全表）
+    @Query("SELECT targetWord FROM showcase_items")
+    List<String> getAllShowcaseWords();
+
     @Update
     void updateShowcaseItem(ShowcaseItem item);
 

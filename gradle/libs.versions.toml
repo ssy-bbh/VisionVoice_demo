@@ -11,6 +11,7 @@ cameraCore = "1.5.1"
 litert = "2.1.0"
 kotlin = "2.2.0"
 coreKtx = "1.17.0"
+playServicesMlkitSubjectSegmentation = "16.0.0-beta1"
 
 [libraries]
 junit = { group = "junit", name = "junit", version.ref = "junit" }
@@ -23,6 +24,7 @@ constraintlayout = { group = "androidx.constraintlayout", name = "constraintlayo
 camera-core = { group = "androidx.camera", name = "camera-core", version.ref = "cameraCore" }
 litert = { group = "com.google.ai.edge.litert", name = "litert", version.ref = "litert" }
 core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
+play-services-mlkit-subject-segmentation = { group = "com.google.android.gms", name = "play-services-mlkit-subject-segmentation", version.ref = "playServicesMlkitSubjectSegmentation" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

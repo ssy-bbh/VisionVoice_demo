@@ -30,7 +30,9 @@ import java.util.concurrent.Executors;
 public class ObjectRecognitionHelper {
 
     private static final String TAG = "ObjectRecognitionHelper";
-    private static final String MODEL_PATH = "yolov8n.tflite";
+    // 模型已升级为 YOLO-World v2（228 类开放词表，词表文本嵌入已烧进权重）
+    // 旧 COCO 80 版模型备份在 app/model_backups/
+    private static final String MODEL_PATH = "yolov8s_worldv2.tflite";
     private static final String LABELS_PATH = "labels.txt";
 
     private Interpreter tflite;
@@ -144,7 +146,8 @@ public class ObjectRecognitionHelper {
             }
 
             // Check if this prediction's max score is the best we've seen so far and above threshold
-            if (maxScore > 0.5f && maxScore > topConfidence) {
+            // 开放词表模型分数普遍偏低，阈值从 0.5 降到 0.3
+            if (maxScore > 0.3f && maxScore > topConfidence) {
                 topConfidence = maxScore;
                 topLabel = labels.get(maxScoreIndex);
 
@@ -168,7 +171,7 @@ public class ObjectRecognitionHelper {
         }
 
         // After checking all predictions, send the single best result via callback
-        if (topConfidence > 0.5f) {
+        if (topConfidence > 0.3f) {
             callback.onResult(topLabel, topConfidence, topBoundingBox);
         } else {
             callback.onResult("No object detected.", 0.0f, null);

@@ -53,7 +53,9 @@ public class CollectionFragment extends Fragment {
         tabLayoutCategories.addOnTabSelectedListener(new TabLayout.OnTabSelectedListener() {
             @Override
             public void onTabSelected(TabLayout.Tab tab) {
-                String category = tab.getText().toString();
+                // 【防闪退】getText() 理论上可能为 null，toString 前先判空
+                CharSequence text = tab.getText();
+                String category = text != null ? text.toString() : "";
                 if ("All".equals(category)) {
                     adapter.updateData(allItems);
                 } else {
@@ -74,11 +76,15 @@ public class CollectionFragment extends Fragment {
     }
 
     private void loadDataFromDatabase() {
-        AppDatabase.databaseWriteExecutor.execute(() -> {
-            // 🚨 防崩点 2：避免 Fragment 被销毁时获取 Context 导致 NullPointerException
-            if (!isAdded() || getContext() == null) return;
+        // 【防闪退】在主线程先抓住 ApplicationContext。
+        // 原来在后台线程里用 isAdded()+getContext() 仍有竞态：
+        // 检查通过后、使用前用户切走 Tab，getContext() 就变 null 了。
+        final android.content.Context appContext = getContext() != null
+                ? getContext().getApplicationContext() : null;
+        if (appContext == null) return;
 
-            List<ShowcaseItem> dbItems = AppDatabase.getInstance(getContext()).appDao().getAllShowcaseItems();
+        AppDatabase.databaseWriteExecutor.execute(() -> {
+            List<ShowcaseItem> dbItems = AppDatabase.getInstance(appContext).appDao().getAllShowcaseItems();
 
             // 🚨 防崩点 3：必须使用 getActivity() 并判空，绝不能盲目使用 requireActivity() 强杀
             if (getActivity() == null) return;

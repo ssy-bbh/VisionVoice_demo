@@ -24,10 +24,25 @@ public class Wav2Vec2Scorer {
             env = OrtEnvironment.getEnvironment();
             String modelAssetPath = fileExistsInAssets(context, "onnx/model_quant.onnx") ? "onnx/model_quant.onnx" : "onnx/model.onnx";
             File modelFile = new File(context.getFilesDir(), "wav2vec2_model.onnx");
-            copyAssetToFile(context, modelAssetPath, modelFile);
+            // 【防闪退/性能】只有文件缺失或大小与 assets 不一致（上次拷贝中断）时才重新拷贝，
+            // 否则每次启动都白白复制 300+MB，还可能把好文件覆盖成坏文件
+            if (!modelFile.exists() || modelFile.length() != assetLength(context, modelAssetPath)) {
+                copyAssetToFile(context, modelAssetPath, modelFile);
+            }
             session = env.createSession(modelFile.getAbsolutePath(), new OrtSession.SessionOptions());
             idToPhoneme = buildIdToPhonemeMap();
         } catch (Exception e) { throw new RuntimeException(e); }
+    }
+
+    private long assetLength(Context c, String p) {
+        try {
+            android.content.res.AssetFileDescriptor afd = c.getAssets().openFd(p);
+            long len = afd.getDeclaredLength();
+            afd.close();
+            return len;
+        } catch (IOException e) {
+            return -1; // 拿不到长度时，交给 exists() 判断兜底
+        }
     }
 
     public PronunciationScore score(String refPhonemeStr, float[] audioData) {
@@ -289,7 +304,11 @@ public class Wav2Vec2Scorer {
         try { c.getAssets().open(p).close(); return true; } catch (IOException e) { return false; }
     }
 
-    public void close() { try { session.close(); env.close(); } catch (Exception ignored) {} }
+    public void close() {
+        // 【防闪退】OrtEnvironment 是全局单例，绝不能在这里 close，
+        // 否则其他持有 session 的调用方（以及之后的重建）都会挂掉
+        try { session.close(); } catch (Exception ignored) {}
+    }
 
     public static class PronunciationScore {
         public final int score;

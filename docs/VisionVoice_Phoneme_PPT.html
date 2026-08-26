@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VisionVoice 音素识别系统 - 演示文稿</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Microsoft YaHei', sans-serif; background: #1a1a2e; color: #fff; overflow: hidden; }
+        .slide-container { width: 100vw; height: 100vh; position: relative; }
+        .slide { width: 100%; height: 100%; display: none; padding: 50px 70px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); position: absolute; top: 0; left: 0; }
+        .slide.active { display: flex; flex-direction: column; }
+        .slide.title-slide { justify-content: center; align-items: center; text-align: center; background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); }
+        .slide.section { justify-content: center; align-items: center; background: linear-gradient(135deg, #0f3460 0%, #1a1a2e 100%); }
+        .slide.section h1 { font-size: 3em; color: #e94560; text-align: center; }
+        .slide.title-slide h1 { font-size: 3em; color: #00d4ff; margin-bottom: 20px; text-shadow: 0 0 30px rgba(0,212,255,0.5); }
+        .slide.title-slide h2 { font-size: 1.8em; color: #e94560; font-weight: 300; }
+        .slide h1 { font-size: 2em; margin-bottom: 25px; color: #00d4ff; }
+        .slide h2 { font-size: 1.3em; margin-bottom: 20px; color: #ffd700; }
+        .slide-content { flex: 1; overflow-y: auto; }
+        ul { list-style: none; }
+        ul li { font-size: 1.2em; margin-bottom: 15px; padding-left: 25px; position: relative; }
+        ul li::before { content: '▶'; position: absolute; left: 0; color: #00d4ff; }
+        .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; }
+        .card { background: rgba(255,255,255,0.1); border-radius: 12px; padding: 20px; }
+        .card h3 { color: #00d4ff; margin-bottom: 12px; font-size: 1.2em; }
+        .card p, .card li { font-size: 1em; line-height: 1.5; }
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; background: rgba(255,255,255,0.1); border-radius: 10px; overflow: hidden; }
+        th { background: rgba(0,212,255,0.3); padding: 12px; text-align: left; font-size: 1.1em; }
+        td { padding: 10px 12px; border-bottom: 1px solid rgba(255,255,255,0.1); font-size: 1em; }
+        tr:last-child td { border-bottom: none; }
+        code { background: rgba(0,0,0,0.3); padding: 2px 8px; border-radius: 4px; font-family: Consolas, monospace; color: #00d4ff; }
+        .error-box { background: rgba(233,69,96,0.2); border-left: 4px solid #e94560; padding: 15px; margin: 15px 0; border-radius: 0 10px 10px 0; }
+        .success-box { background: rgba(0,212,255,0.2); border-left: 4px solid #00d4ff; padding: 15px; margin: 15px 0; border-radius: 0 10px 10px 0; }
+        .warning-box { background: rgba(255,215,0,0.2); border-left: 4px solid #ffd700; padding: 15px; margin: 15px 0; border-radius: 0 10px 10px 0; }
+        .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-top: 20px; }
+        .grid-item { background: rgba(255,255,255,0.1); padding: 15px; border-radius: 10px; text-align: center; }
+        .grid-item h4 { color: #00d4ff; margin-bottom: 8px; }
+        .badge { display: inline-block; padding: 4px 12px; border-radius: 15px; font-size: 0.8em; margin-left: 8px; }
+        .badge-success { background: #00d4ff; color: #1a1a2e; }
+        .badge-warning { background: #ffd700; color: #1a1a2e; }
+        .badge-error { background: #e94560; color: #fff; }
+        .nav { position: fixed; bottom: 20px; right: 20px; display: flex; gap: 10px; z-index: 100; }
+        .nav button { background: rgba(0,212,255,0.3); border: none; color: #fff; padding: 12px 20px; border-radius: 8px; cursor: pointer; font-size: 1em; }
+        .nav button:hover { background: #00d4ff; color: #1a1a2e; }
+        .progress { position: fixed; top: 0; left: 0; height: 4px; background: linear-gradient(90deg, #00d4ff, #e94560); transition: width 0.3s; z-index: 100; }
+        .page { position: fixed; bottom: 25px; left: 25px; color: rgba(255,255,255,0.6); font-size: 0.9em; }
+        .toc-item { background: rgba(255,255,255,0.1); padding: 12px 15px; margin: 8px 0; border-radius: 8px; display: flex; align-items: center; }
+        .toc-num { background: #e94560; width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-right: 15px; font-weight: bold; }
+        .flow { display: flex; flex-direction: column; align-items: center; gap: 8px; margin: 15px 0; }
+        .flow-item { background: rgba(0,212,255,0.2); padding: 12px 25px; border-radius: 8px; text-align: center; border: 2px solid #00d4ff; width: 80%; font-size: 1em; }
+        .flow-arrow { color: #00d4ff; font-size: 1.3em; }
+        .highlight { font-size: 1.4em; color: #ffd700; margin: 15px 0; }
+    </style>
+</head>
+<body>
+    <div class="progress" id="progress"></div>
+    <div class="slide-container" id="slides">
+        
+        <!-- Slide 1: Title -->
+        <div class="slide title-slide active">
+            <h1>🎯 VisionVoice 音素识别系统</h1>
+            <h2>端侧AI发音评估技术详解</h2>
+            <p style="margin-top: 50px; opacity: 0.7;">VisionVoice Team · 2024 IEEE APCCAS</p>
+        </div>
+        
+        <!-- Slide 2: TOC -->
+        <div class="slide">
+            <h1>📋 目录</h1>
+            <div class="slide-content">
+                <div class="toc-item"><span class="toc-num">1</span>项目概述与核心挑战</div>
+                <div class="toc-item"><span class="toc-num">2</span>声学模型选型演进</div>
+                <div class="toc-item"><span class="toc-num">3</span>信号预处理与CTC解码</div>
+                <div class="toc-item"><span class="toc-num">4</span>双重归一化架构</div>
+                <div class="toc-item"><span class="toc-num">5</span>序列对齐与评分算法</div>
+                <div class="toc-item"><span class="toc-num">6</span>声学容错矩阵</div>
+                <div class="toc-item"><span class="toc-num">7</span>性能指标与总结</div>
+            </div>
+        </div>
+        
+        <!-- Slide 3: Section 1 -->
+        <div class="slide section"><h1>第一部分 · 项目概述与核心挑战</h1></div>
+        
+        <!-- Slide 4: Intro -->
+        <div class="slide">
+            <h1>VisionVoice 简介</h1>
+            <h2>AR英语学习应用的端侧AI发音评估</h2>
+            <div class="slide-content">
+                <ul>
+                    <li><strong>核心目标：</strong>零网络延迟、高隐私安全的专业级发音评估</li>
+                    <li><strong>技术方案：</strong>端侧离线推理，无需网络连接</li>
+                    <li><strong>应用场景：</strong>AR物体识别 → 单词学习 → 发音练习</li>
+                    <li><strong>性能指标：</strong>推理时间 &lt; 320ms，模型体积 ~300MB</li>
+                </ul>
+            </div>
+        </div>
+        
+        <!-- Slide 5: Tech Stack -->
+        <div class="slide">
+            <h1>核心技术栈</h1>
+            <div class="slide-content">
+                <table>
+                    <tr><th>层级</th><th>技术选型</th><th>说明</th></tr>
+                    <tr><td><strong>语音模型</strong></td><td>Wav2Vec2-XLS-R 300M</td><td>多语言音素识别</td></tr>
+                    <tr><td><strong>推理引擎</strong></td><td>ONNX Runtime Mobile</td><td>端侧高效推理</td></tr>
+                    <tr><td><strong>对齐算法</strong></td><td>Needleman-Wunsch</td><td>序列动态规划对齐</td></tr>
+                    <tr><td><strong>评分系统</strong></td><td>非线性分段映射</td><td>心理学反馈曲线</td></tr>
+                </table>
+            </div>
+        </div>
+        
+        <!-- Slide 6: Challenge 1 -->
+        <div class="slide">
+            <h1>挑战一：模型领域错位 (Domain Mismatch)</h1>
+            <h2>ASR模型输出字母，评估基准使用音标</h2>
+            <div class="slide-content">
+                <div class="flow">
+                    <div class="flow-item">📥 输入音频</div>
+                    <div class="flow-arrow">↓</div>
+                    <div class="flow-item">Wav2Vec2-base → "A-P-P-L-E" (英文字母)</div>
+                    <div class="flow-arrow">≠</div>
+                    <div class="flow-item">CMU Dict → "AE P L" (Arpabet音素)</div>
+                </div>
+                <div class="error-box">
+                    <strong>❌ 问题：</strong>跨维度特征不匹配<br>
+                    <strong>结果：</strong>对所有发音均打出 <strong>0分</strong>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Slide 7: Challenge 2 -->
+        <div class="slide">
+            <h1>挑战二：异构数据源符号域冲突</h1>
+            <h2>Unicode IPA vs ASCII Arpabet 字符不匹配</h2>
+            <div class="slide-content">
+                <div class="two-col">
+                    <div class="card">
+                        <h3>📖 词典路径 (标准答案)</h3>
+                        <p>遵循语言学家规范</p>
+                        <p style="font-size: 1.8em; color: #00d4ff;">ɹ, æ, ɔ</p>
+                        <p>Unicode 国际音标</p>
+                    </div>
+                    <div class="card">
+                        <h3>🤖 AI模型路径 (识别结果)</h3>
+                        <p>遵循深度学习标注规范</p>
+                        <p style="font-size: 1.8em; color: #e94560;">r, ae, ao</p>
+                        <p>ASCII Arpabet音标</p>
+                    </div>
+                </div>
+                <div class="error-box">
+                    <strong>❌ Java字符串比较：</strong><code>"ɹ".equals("r")</code> → <strong>false</strong><br>
+                    即使发音完全正确，系统依然判定为错读！
+                </div>
+            </div>
+        </div>
+        
+        <!-- Slide 8: Challenge 3 -->
+        <div class="slide">
+            <h1>挑战三：声学物理干扰</h1>
+            <h2>清塞音(/p/, /t/, /k/)气流冲击麦克风</h2>
+            <div class="slide-content">
+                <div class="flow">
+                    <div class="flow-item">👄 用户发音清塞音 /k/</div>
+                    <div class="flow-arrow">↓ 瞬间释放高压气流</div>
+                    <div class="flow-item">📱 冲击手机麦克风振膜 → 非线性失真</div>
+                    <div class="flow-arrow">↓</div>
+                    <div class="flow-item" style="background: rgba(233,69,96,0.3); border-color: #e94560;">
+                        🤖 AI识别为 /hh/ 而非 /k/
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Slide 9: Section 2 -->
+        <div class="slide section"><h1>第二部分 · 声学模型选型演进</h1></div>
+        
+        <!-- Slide 10: Model Comparison -->
+        <div class="slide">
+            <h1>2.1 初代方案 vs 重构方案</h1>
+            <div class="slide-content">
+                <div class="two-col">
+                    <div class="card" style="border: 2px solid #e94560;">
+                        <h3 style="color: #e94560;">❌ Wav2Vec2-Base</h3>
+                        <ul>
+                            <li>参数量：95M</li>
+                            <li>输出：英文字母 (A-Z)</li>
+                            <li>问题：无法与音标对齐</li>
+                        </ul>
+                        <div style="text-align: center; margin-top: 15px;">
+                            <span class="badge badge-error">测试结果：0分</span>
+                        </div>
+                    </div>
+                    <div class="card" style="border: 2px solid #00d4ff;">
+                        <h3 style="color: #00d4ff;">✅ Wav2Vec2-XLS-R</h3>
+                        <ul>
+                            <li>参数量：300M</li>
+                            <li>输出：Arpabet音素 (40类)</li>
+                            <li>优势：直接输出音标特征</li>
+                        </ul>
+                        <div style="text-align: center; margin-top: 15px;">
+                            <span class="badge badge-success">重构成功</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Slide 11: Optimization -->
+        <div class="slide">
+            <h1>2.2 端侧性能优化</h1>
+            <h2>INT8动态量化：体积压缩75%</h2>
+            <div class="slide-content">
+                <div class="two-col">
+                    <div class="card" style="border: 2px solid #e94560; text-align: center;">
+                        <h3>原始模型 (FP32)</h3>
+                        <p style="font-size: 2.5em; color: #e94560;">1.2 GB</p>
+                    </div>
+                    <div class="card" style="border: 2px solid #00d4ff; text-align: center;">
+                        <h3>优化模型 (INT8)</h3>
+                        <p style="font-size: 2.5em; color: #00d4ff;">~300 MB</p>
+                        <span class="badge badge-success">减少75%</span>
+                    </div>
+                </div>
+                <div class="success-box">
+                    <strong>✅ 优势：</strong>完美适配移动端内存限制 | 避免Android OOM | 精度衰减 &lt; 1%
+                </div>
+            </div>
+        </div>
+        
+        <!-- Slide 12: Section 3 -->
+        <div class="slide section"><h1>第三部分 · 信号预处理与CTC解码</h1></div>
+        
+        <!-- Slide 13: AGC -->
+        <div class="slide">
+            <h1>3.1 AGC自动增益控制</h1>
+            <h2>防"AI幻觉"拦截机制</h2>
+            <div class="slide-content">
+                <div class="warning-box">
+                    <strong>⚠️ 问题：</strong>用户未发声时，模型将背景噪音解码为无意义音素碎片
+                </div>
+                <div class="flow">
+                    <div class="flow-item">📊 计算PCM数据峰值振幅</div>
+                    <div class="flow-arrow">↓</div>
+                    <div class="flow-item">if 振幅 &lt; 0.015 → 拦截推理 → 全局漏读</div>
+                    <div class="flow-arrow">else</div>
+                    <div class="flow-item">→ 执行归一化 → 确保微弱特征被捕获</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Slide 14: CTC -->
+        <div class="slide">
+            <h1>3.2 CTC解码去噪</h1>
+            <h2>过滤非发音特征</h2>
+            <div class="slide-content">
+                <table>
+                    <tr><th>杂质符号</th><th>含义</th><th>处理方式</th></tr>
+                    <tr><td><code>h#</code></td><td>静音帧</td><td>过滤</td></tr>
+                    <tr><td><code>spn</code></td><td>环境杂音</td><td>过滤</td></tr>
+                    <tr><td><code>[UNK]</code></td><td>未知符号</td><td>过滤</td></tr>
+                </table>
+                <div class="success-box">
+                    <strong>✅ 解决方案：</strong>硬编码过滤器，实时剪枝剔除杂质，确保送入对比算法的数据是纯净的真实音素序列
+                </div>
+            </div>
+        </div>
+        
+        <!-- Slide 15: Section 4 -->
+        <div class="slide section"><h1>第四部分 · 双重归一化架构</h1></div>
+        
+        <!-- Slide 16: Babel Problem -->
+        <div class="slide">
+            <h1>4.1 跨服聊天的"巴别塔难题"</h1>
+            <h2>现象：完全正确的发音被判定为错读</h2>
+            <div class="slide-content">
+                <div class="card" style="text-align: center; padding: 30px;">
+                    <p class="highlight">标准音标: <span style="color: #00d4ff; font-size: 1.8em;">i</span> ← 完全匹配 → <span style="color: #00d4ff; font-size: 1.8em;">i</span> :识别音标</p>
+                    <div class="error-box" style="display: inline-block; margin-top: 20px;">
+                        ❌ 判定结果: <strong>错读</strong> (标红)
+                    </div>
+                </div>
+                <div class="error-box">
+                    <strong>根本原因：</strong>Unicode与ASCII编码不同<br>
+                    <code>"ɹ".equals("r")</code> → <strong>false</strong>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Slide 17: Double Normalization -->
+        <div class="slide">
+            <h1>4.2 双层翻译机制</h1>
+            <h2>彻底剥离比对逻辑与渲染逻辑</h2>
+            <div class="slide-content">
+                <div class="flow">
+                    <div class="flow-item" style="background: rgba(0,212,255,0.3);">
+                        <strong>Level 1: 底层降维</strong><br>
+                        Unicode IPA → ASCII Arpabet
+                    </div>
+                    <div class="flow-arrow">↓</div>
+                    <div class="flow-item" style="background: rgba(233,69,96,0.3);">
+                        <strong>Level 2: 对齐运算</strong><br>
+                        Needleman-Wunsch Alignment
+                    </div>
+                    <div class="flow-arrow">↓</div>
+                    <div class="flow-item" style="background: rgba(0,212,255,0.3);">
+                        <strong>Level 3: 表层升维</strong><br>
+                        ASCII Arpabet → Unicode IPA
+                    </div>
+                </div>
+                <div class="success-box">
+                    <strong>核心思想：</strong>算法用粗糙的Arpabet计算，UI显示专业的国际音标
+                </div>
+            </div>
+        </div>
+        
+        <!-- Slide 18: Section 5 -->
+        <div class="slide section"><h1>第五部分 · 序列对齐与评分算法</h1></div>
+        
+        <!-- Slide 19: NW Algorithm -->
+        <div class="slide">
+            <h1>5.1 Needleman-Wunsch全局对齐</h1>
+            <h2>定制化序列对齐算法</h2>
+            <div class="slide-content">
+                <div class="warning-box">
+                    <strong>⚠️ 问题：</strong>用户发音长度 ≠ 标准发音长度（吞音或多读）
+                </div>
+                <table>
+                    <tr><th>权重参数</th><th>分值</th><th>说明</th></tr>
+                    <tr><td>MATCH</td><td style="color: #00d4ff;">+1.0</td><td>完全匹配</td></tr>
+                    <tr><td>FLAW</td><td style="color: #ffd700;">+0.5</td><td>发音瑕疵</td></tr>
+                    <tr><td>MISMATCH</td><td style="color: #e94560;">-1.0</td><td>错读</td></tr>
+                    <tr><td>GAP</td><td style="color: #e94560;">-1.0</td><td>漏读/多读</td></tr>
+                </table>
+            </div>
+        </div>
+        
+        <!-- Slide 20: Alignment Example -->
+        <div class="slide">
+            <h1>5.2 对齐矩阵示意</h1>
+            <h2>标准序列 vs 用户序列</h2>
+            <div class="slide-content">
+                <div class="card" style="text-align: center; padding: 30px;">
+                    <p style="font-size: 1.4em; margin-bottom: 20px;">
+                        标准音素: <strong>A</strong> &nbsp; <strong>E</strong> &nbsp; <strong>P</strong> &nbsp; <strong>L</strong><br>
+                        用户音素: <strong>A</strong> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; <strong>P</strong> &nbsp; <strong>L</strong>
+                    </p>
+                    <div style="background: rgba(0,0,0,0.2); padding: 20px; border-radius: 10px;">
+                        <strong>对齐分析：</strong><br>
+                        A → MATCH ✓ | [GAP] → Gap(-1) | P → MATCH ✓ | L → MATCH ✓<br><br>
+                        <strong>计算：</strong>(3 - 1) / 3 = <span style="color: #00d4ff; font-size: 1.5em;">0.67</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Slide 21: Scoring Curve -->
+        <div class="slide">
+            <h1>5.3 非线性评分曲线</h1>
+            <h2>基于教学反馈心理学的分段映射</h2>
+            <div class="slide-content">
+                <div class="grid-3">
+                    <div class="grid-item">
+                        <span class="badge badge-error">&lt; 0.5</span>
+                        <h4>严格区</h4>
+                        <p>0-59分</p>
+                    </div>
+                    <div class="grid-item">
+                        <span class="badge badge-warning">0.5-0.8</span>
+                        <h4>进步区</h4>
+                        <p>60-89分</p>
+                        <small>激励学习</small>
+                    </div>
+                    <div class="grid-item">
+                        <span class="badge badge-success">≥ 0.8</span>
+                        <h4>优秀区</h4>
+                        <p>90-100分</p>
+                        <small>鼓励性质</small>
+                    </div>
+                </div>
+                <div class="success-box">
+                    <strong>核心思想：</strong>扩大中间分数段，让微小进步也能被感知，保护学习者信心
+                </div>
+            </div>
+        </div>
+        
+        <!-- Slide 22: Section 6 -->
+        <div class="slide section"><h1>第六部分 · 声学容错矩阵</h1></div>
+        
+        <!-- Slide 23: Plosive Puff -->
+        <div class="slide">
+            <h1>6.1 物理抗噪：爆破音气流干扰</h1>
+            <h2>Plosive Puff Effect 解决方案</h2>
+            <div class="slide-content">
+                <div class="flow">
+                    <div class="flow-item">👄 用户发音清塞音 /k/, /p/, /t/</div>
+                    <div class="flow-arrow">↓ 高压气流冲击麦克风</div>
+                    <div class="flow-item" style="background: rgba(233,69,96,0.3); border-color: #e94560;">
+                        物理失真 → AI识别为 /hh/
+                    </div>
+                    <div class="flow-arrow">↓</div>
+                    <div class="flow-item" style="background: rgba(0,212,255,0.3);">
+                        ✅ 工程解决：<code>k → hh</code> 判定为完全匹配
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Slide 24: SLA Theory -->
+        <div class="slide">
+            <h1>6.2 SLA理论分级惩罚</h1>
+            <h2>基于Munro & Derwing (1995) 第二语言习得理论</h2>
+            <div class="slide-content">
+                <table>
+                    <tr><th>等级</th><th>类型</th><th>判定</th><th>分数</th><th>示例</th></tr>
+                    <tr><td><strong>一级</strong></td><td>完全豁免</td><td>Ignored→Match</td><td style="color: #00d4ff;">100分</td><td>长短元音偏差</td></tr>
+                    <tr><td><strong>二级</strong></td><td>发音瑕疵</td><td>Flaw</td><td style="color: #ffd700;">60分</td><td>梅花音张口不足</td></tr>
+                    <tr><td><strong>三级</strong></td><td>严重错读</td><td>Substitution</td><td style="color: #e94560;">0分</td><td>破坏语义</td></tr>
+                </table>
+                <div class="success-box">
+                    <strong>核心思想：</strong>可理解度(Intelligibility) > 母语者口音(Accentedness)
+                </div>
+            </div>
+        </div>
+        
+        <!-- Slide 25: Section 7 -->
+        <div class="slide section"><h1>第七部分 · 性能指标与总结</h1></div>
+        
+        <!-- Slide 26: Performance -->
+        <div class="slide">
+            <h1>性能指标</h1>
+            <h2>端侧推理效率</h2>
+            <div class="slide-content">
+                <table>
+                    <tr><th>指标</th><th>数值</th><th>说明</th></tr>
+                    <tr><td>模型加载时间</td><td>~800ms</td><td>mmap内存映射</td></tr>
+                    <tr><td>推理时间</td><td>~320ms</td><td>1秒音频</td></tr>
+                    <tr><td>Java堆占用</td><td>~11MB</td><td>内存优化</td></tr>
+                    <tr><td>模型体积</td><td>~300MB</td><td>INT8量化</td></tr>
+                </table>
+                <div class="success-box">
+                    <strong>🎯 对比云端方案：</strong>延迟降低 99%，隐私提升 100%
+                </div>
+            </div>
+        </div>
+        
+        <!-- Slide 27: Architecture -->
+        <div class="slide">
+            <h1>技术架构总览</h1>
+            <div class="slide-content">
+                <div class="flow">
+                    <div class="flow-item">📥 用户音频 (m4a/AAC)</div>
+                    <div class="flow-arrow">↓</div>
+                    <div class="flow-item">AudioProcessor: AAC解码 → 16kHz → 归一化</div>
+                    <div class="flow-arrow">↓</div>
+                    <div class="flow-item">Wav2Vec2Scorer (ONNX): CTC解码 → 杂质过滤</div>
+                    <div class="flow-arrow">↓</div>
+                    <div class="flow-item" style="background: rgba(233,69,96,0.3);">双重归一化: IPA ↔ Arpabet</div>
+                    <div class="flow-arrow">↓</div>
+                    <div class="flow-item">Needleman-Wunsch + 三级容错矩阵</div>
+                    <div class="flow-arrow">↓</div>
+                    <div class="flow-item" style="background: rgba(0,212,255,0.3);">✅ 最终评分 (0-100分)</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Slide 28: Innovation -->
+        <div class="slide">
+            <h1>核心创新总结</h1>
+            <div class="slide-content">
+                <div class="grid-3">
+                    <div class="grid-item">
+                        <h4>#1 模型领域适配</h4>
+                        <p>Wav2Vec2-XLS-R</p>
+                        <p>INT8量化</p>
+                        <small>95M字母模型 → 300M音素模型</small>
+                    </div>
+                    <div class="grid-item">
+                        <h4>#2 符号域统一</h4>
+                        <p>双重归一化架构</p>
+                        <p>状态机强制转换</p>
+                        <small>消除Unicode/ASCII冲突</small>
+                    </div>
+                    <div class="grid-item">
+                        <h4>#3 物理补偿</h4>
+                        <p>三级声学容错矩阵</p>
+                        <p>SLA理论</p>
+                        <small>弥补硬件麦克风缺陷</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Slide 29: Results -->
+        <div class="slide">
+            <h1>项目成果</h1>
+            <div class="slide-content">
+                <ul>
+                    <li>✅ <strong>零网络延迟：</strong>端侧离线推理，无需联网</li>
+                    <li>✅ <strong>高隐私安全：</strong>音频数据不出设备</li>
+                    <li>✅ <strong>媲美云端精度：</strong>双重归一化 + 容错矩阵</li>
+                    <li>✅ <strong>移动端适配：</strong>300MB模型 + 11MB内存</li>
+                </ul>
+                <div class="card" style="margin-top: 30px; text-align: center; background: rgba(0,212,255,0.2);">
+                    <h3 style="color: #00d4ff;">论文发表</h3>
+                    <p>2024 IEEE APCCAS</p>
+                    <p style="font-size: 0.9em; opacity: 0.8;">ARIELLE: AR-based Independent and Experiential Language Learner on the Edge</p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Slide 30: Thanks -->
+        <div class="slide title-slide">
+            <h1>🙏 谢谢！</h1>
+            <h2>VisionVoice - 让每个学习者都能获得专业的发音指导</h2>
+            <p style="margin-top: 40px; opacity: 0.7;">项目主页: D:\AndroidStudioProjects\MyApplication</p>
+        </div>
+        
+    </div>
+    
+    <div class="nav">
+        <button onclick="prev()">◀ 上一页</button>
+        <button onclick="next()">下一页 ▶</button>
+    </div>
+    <div class="page" id="pageNum"></div>
+    
+    <script>
+        let current = 0;
+        const slides = document.querySelectorAll('.slide');
+        const total = slides.length;
+        
+        function showSlide(n) {
+            slides[current].classList.remove('active');
+            current = (n + total) % total;
+            slides[current].classList.add('active');
+            document.getElementById('progress').style.width = ((current + 1) / total * 100) + '%';
+            document.getElementById('pageNum').textContent = (current + 1) + ' / ' + total;
+        }
+        
+        function next() { showSlide(current + 1); }
+        function prev() { showSlide(current - 1); }
+        
+        document.addEventListener('keydown', e => {
+            if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'Enter') next();
+            if (e.key === 'ArrowLeft') prev();
+        });
+        
+        showSlide(0);
+    </script>
+</body>
+</html>

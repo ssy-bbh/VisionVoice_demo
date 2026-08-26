@@ -96,9 +96,11 @@ public class OverlayView extends View {
     /**
      * 【核心新增】处理屏幕触摸事件
      */
+    /**
+     * 【核心升级】处理屏幕触摸事件 (解决重叠框拦截)
+     */
     @Override
     public boolean onTouchEvent(MotionEvent event) {
-        // 我们只关心手指抬起的那一刻 (Click)
         if (event.getAction() == MotionEvent.ACTION_UP) {
             float x = event.getX();
             float y = event.getY();
@@ -107,29 +109,37 @@ public class OverlayView extends View {
                 float width = getWidth();
                 float height = getHeight();
 
-                // 倒序遍历，优先响应最上层的框（如果有重叠）
-                for (int i = results.size() - 1; i >= 0; i--) {
-                    YoloDetector.Result result = results.get(i);
+                YoloDetector.Result bestMatch = null;
+                // 记录能被点中的框里的最小面积
+                float minArea = Float.MAX_VALUE;
+
+                // 遍历所有框，找出包含触摸点且面积最小的那个
+                for (YoloDetector.Result result : results) {
                     RectF normalizedRect = result.getRect();
 
-                    // 还原为屏幕坐标
                     float left = normalizedRect.left * width;
                     float top = normalizedRect.top * height;
                     float right = normalizedRect.right * width;
                     float bottom = normalizedRect.bottom * height;
 
-                    // 判断手指是否点中了这个框
-                    // 稍微扩大一点点击区域，提升用户体验
+                    // 判断手指是否在这个框内
                     if (x >= left && x <= right && y >= top && y <= bottom) {
-                        if (listener != null) {
-                            listener.onBoxClick(result);
-                            return true; // 消耗掉事件，不再向下传递
+                        float area = (right - left) * (bottom - top);
+                        // 🌟 最小面积优先算法：越具体的物体越容易被点中！
+                        if (area < minArea) {
+                            minArea = area;
+                            bestMatch = result;
                         }
                     }
                 }
+
+                // 如果找到了最匹配的框，触发回调
+                if (bestMatch != null && listener != null) {
+                    listener.onBoxClick(bestMatch);
+                    return true;
+                }
             }
         }
-        // 必须返回 true，表示我们消费了这个触摸事件，否则收不到 ACTION_UP
         return true;
     }
 

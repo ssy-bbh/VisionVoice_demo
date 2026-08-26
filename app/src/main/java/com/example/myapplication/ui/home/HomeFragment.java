@@ -98,28 +98,35 @@ public class HomeFragment extends Fragment {
         if (getContext() == null || containerTasks == null) return;
 
         UserStatsManager.INSTANCE.getDailyChallengesAsync(getContext(), forceRefresh, tasks -> {
-            if (getActivity() == null) return;
-            List<String> completedTasks = UserStatsManager.INSTANCE.getCompletedChallenges(getContext());
+            if (getActivity() == null || getContext() == null) return;
+            // 【防闪退】先把 Context 抓成局部变量：回调是异步的，
+            // 等 runOnUiThread 真正执行时 Fragment 可能已被销毁，
+            // 届时 getContext() == null，new FrameLayout(null) 会直接 NPE 闪退
+            final android.content.Context ctx = getContext().getApplicationContext();
+            List<String> completedTasks = UserStatsManager.INSTANCE.getCompletedChallenges(ctx);
 
             getActivity().runOnUiThread(() -> {
+                if (!isAdded() || containerTasks == null) return;
+
                 containerTasks.removeAllViews();
                 shimmerViews.clear();
 
                 for (String taskWord : tasks) {
+                    if (taskWord == null || taskWord.isEmpty()) continue;
                     boolean isCompleted = false;
                     for (String c : completedTasks) {
                         if (c.equalsIgnoreCase(taskWord)) { isCompleted = true; break; }
                     }
 
                     // 1. 卡片外框设置
-                    FrameLayout tagRoot = new FrameLayout(getContext());
+                    FrameLayout tagRoot = new FrameLayout(ctx);
                     LinearLayout.LayoutParams rootParams = new LinearLayout.LayoutParams(
                             0, dpToPx(120), 1.0f); // 优雅的 120dp 高度
                     rootParams.setMargins(dpToPx(6), 0, dpToPx(6), 0);
                     tagRoot.setLayoutParams(rootParams);
 
                     // 2. 铺上重力星空底层
-                    GravityShimmerView shimmerBg = new GravityShimmerView(getContext());
+                    GravityShimmerView shimmerBg = new GravityShimmerView(ctx);
                     shimmerBg.setLayoutParams(new FrameLayout.LayoutParams(
                             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
                     shimmerBg.setCompleted(isCompleted);
@@ -127,7 +134,7 @@ public class HomeFragment extends Fragment {
                     tagRoot.addView(shimmerBg);
 
                     // 3. 铺上悬浮的文字
-                    TextView tvWord = new TextView(getContext());
+                    TextView tvWord = new TextView(ctx);
                     String displayWord = taskWord.substring(0, 1).toUpperCase() + taskWord.substring(1);
 
                     // 🌟 针对 Tennis racket 等长词的终极杀招：空格换行

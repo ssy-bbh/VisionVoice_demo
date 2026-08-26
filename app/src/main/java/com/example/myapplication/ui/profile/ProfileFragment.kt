@@ -75,13 +75,20 @@ class ProfileFragment : Fragment() {
     }
 
     private fun loadProfileStats() {
+        // 🚨 防闪退：先把 ApplicationContext 抓在手里再进 IO 线程。
+        // 用户快速切 Tab 时 Fragment 会先被销毁，此时在 IO 线程上调用
+        // requireContext() 会抛 IllegalStateException 直接闪退。
+        val appContext = context?.applicationContext ?: return
         lifecycleScope.launch(Dispatchers.IO) {
-            val dao = AppDatabase.getInstance(requireContext()).appDao()
+            val dao = AppDatabase.getInstance(appContext).appDao()
             val unlockedCount = dao.getUnlockedCount()
             val perfectCount = dao.getPerfectPronunciationCount()
             val totalRecords = dao.getTotalPracticeCount()
 
             withContext(Dispatchers.Main) {
+                // 页面已销毁就不再更新 UI
+                if (!isAdded || view == null) return@withContext
+
                 // 1. 更新顶部文字大盘
                 tvStatUnlocked.text = unlockedCount.toString()
                 tvStatPerfect.text = perfectCount.toString()
